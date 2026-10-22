@@ -1,0 +1,71 @@
+<template>
+    <div class="slds-p-around_x-small mainComp">
+        <div class="slds-grid">
+            <div class="slds-p-horizontal_x-small slds-col slds-size_10-of-12">
+                <lightning-input label="Service Company Search" type="text" value={serviceCompany} onchange={handleServiceCompanyChange} variant="label-inline"></lightning-input>
+            </div>
+            <div class="slds-p-top_xx-small slds-col slds-size_2-of-12">
+                <lightning-button label="Search" class="search_nearBy_button" icon-name="utility:search"  onclick={handleSearch}></lightning-button>
+            </div>        
+        </div>
+        <div if:true={isMarkerSelected}>
+            <lightning-card  icon-name="standard:account" title="Selected Service Center">
+                <h3 slot="title">Selected Service Center</h3>
+                <div class="slds-p-around_x-small">
+                    <div class="slds-grid">
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b> Repair Shop Name:</b> {repairShopName}</span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b>Street:</b> {street}</span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b>City:</b> {city}</span>
+                        </div>
+                    </div>
+                    <div class="slds-grid"> 
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b>State/Provice:</b> {state}</span>
+                        </div>                               
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b>PostalCode:</b> {postalCode}</span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b>Country:</b> {country}</span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-3">
+                        </div>             
+                    </div>
+                    
+                    <div class="slds-grid"> 
+                        <div class="slds-col slds-size_1-of-3">
+                            <span><b>Phone:</b> {phone}</span>
+                        </div>             
+                    </div>
+                </div>
+                <lightning-button label="Save Selection" icon-name="utility:check" variant="brand" onclick={handleSaveSelection} slot="actions"></lightning-button>
+            </lightning-card>                
+        </div>
+        <div class ='slds-p-around_x-small slds-grid'>
+            <div class="slds-p-around_x-small slds-col">
+                <div if:true={accountAddressFound}>
+                    <div if:true={mapMarkersHasElements}>
+                        <lightning-map map-markers={mapMarkers}
+                        zoom-level="11"
+                        center={center}
+                        onmarkerselect={handleMarkerSelect}
+                        > </lightning-map>
+                    </div>
+                
+                </div>
+            </div>
+
+        </div>   
+         
+        <div if:false={accountAddressFound}>
+                <lightning-card title="Preferred Service Center">
+                    <p>No Address Found</p>"
+            </lightning-card>
+        </div>
+    </div>
+</template>

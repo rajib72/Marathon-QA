@@ -1,0 +1,282 @@
+<template>
+
+    <div class="quote-request-container">
+
+        <!-- =====================================================
+             HEADER
+             ===================================================== -->
+
+        <div class="page-header">
+
+            <div class="header-content">
+
+                <div class="header-icon">
+                    <lightning-icon
+                        icon-name="standard:quotes"
+                        alternative-text="Quote Request"
+                        size="medium">
+                    </lightning-icon>
+                </div>
+
+                <div>
+                    <h1>Internal Quote Request</h1>
+
+                    <p class="header-subtitle">
+                        Enter the required details to retrieve available quotes.
+                    </p>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- =====================================================
+             FORM
+             ===================================================== -->
+
+        <div class="form-card">
+
+            <div class="section-header">
+                <h2>Quote Request Details</h2>
+            </div>
+
+
+            <div class="form-body">
+
+                <!-- =================================================
+                     CLIENT
+                     ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        Client
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-combobox
+                        name="client"
+                        value={client}
+                        options={clientOptions}
+                        placeholder="Select Client"
+                        onchange={handleClientChange}
+                        disabled={isLoadingClients}>
+                    </lightning-combobox>
+
+                </div>
+
+
+                <!-- =================================================
+                     PRODUCT
+                     ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        Product
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-combobox
+                        name="product"
+                        value={product}
+                        options={productOptions}
+                        placeholder="Select Product"
+                        onchange={handleProductChange}
+                        disabled={isProductDisabled}>
+                    </lightning-combobox>
+
+                </div>
+
+
+                <!-- =================================================
+                     SALE ODOMETER
+                     ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        Sale Odometer
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-input
+                        type="text"
+                        name="saleOdometer"
+                        value={saleOdometer}
+                        placeholder="Enter Sale Odometer"
+                        onchange={handleInputChange}>
+                    </lightning-input>
+
+                </div>
+
+
+                <!-- =================================================
+                     STATE
+                     ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        State
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-combobox
+                        name="state"
+                        value={state}
+                        options={stateOptions}
+                        placeholder="Select State"
+                        onchange={handleStateChange}>
+                    </lightning-combobox>
+
+                </div>
+
+
+                <!-- =================================================
+                     VIN
+                     ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        VIN
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-input
+                        type="text"
+                        name="vin"
+                        value={vin}
+                        placeholder="Enter VIN"
+                        onchange={handleInputChange}>
+                    </lightning-input>
+
+                </div>
+
+
+                <!-- =================================================
+                     OPTIONS
+                     ================================================= -->
+
+                <div class="form-field options-field">
+
+                    <label>
+                        Options
+                    </label>
+
+                    <div class="multi-select-container">
+
+                        <button
+                            type="button"
+                            class="multi-select-button"
+                            onclick={toggleOptionsDropdown}
+                            disabled={isOptionsDisabled}>
+
+                            <span class={optionsTextClass}>
+                                {optionsDisplayText}
+                            </span>
+
+                            <lightning-icon
+                                icon-name="utility:chevrondown"
+                                alternative-text="Open Options"
+                                size="x-small">
+                            </lightning-icon>
+
+                        </button>
+
+
+                        <template if:true={showOptionsDropdown}>
+
+                            <div class="options-dropdown">
+
+                                <template if:true={hasOptions}>
+
+                                    <template
+                                        for:each={optionOptions}
+                                        for:item="option">
+
+                                        <div
+                                            key={option.value}
+                                            class="option-row">
+
+                                            <lightning-input
+                                                type="checkbox"
+                                                label={option.label}
+                                                value={option.value}
+                                                checked={option.checked}
+                                                onchange={handleOptionChange}>
+                                            </lightning-input>
+
+                                        </div>
+
+                                    </template>
+
+                                </template>
+
+
+                                <template if:false={hasOptions}>
+
+                                    <div class="no-options">
+                                        No options available.
+                                    </div>
+
+                                </template>
+
+                            </div>
+
+                        </template>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =====================================================
+                 FOOTER
+                 ===================================================== -->
+
+            <div class="form-footer">
+
+                <lightning-button
+                    label="Reset"
+                    variant="neutral"
+                    onclick={handleReset}
+                    disabled={isLoading}>
+                </lightning-button>
+
+                <lightning-button
+                    label="Get Quotes"
+                    variant="brand"
+                    onclick={handleGetQuotes}
+                    disabled={isLoading}>
+                </lightning-button>
+
+            </div>
+
+        </div>
+
+
+        <!-- =====================================================
+             LOADING
+             ===================================================== -->
+
+        <template if:true={isLoading}>
+
+            <div class="loading-container">
+
+                <lightning-spinner
+                    alternative-text="Loading"
+                    size="medium">
+                </lightning-spinner>
+
+            </div>
+
+        </template>
+
+    </div>
+
+</template>

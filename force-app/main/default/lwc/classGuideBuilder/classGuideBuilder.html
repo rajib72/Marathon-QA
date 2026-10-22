@@ -1,0 +1,480 @@
+<template>
+    <template if:true={isLoading}>
+        <lightning-spinner alternative-text="Loading" size="medium"></lightning-spinner>
+    </template>
+    <div class="class_guide-builder" style="background-color: white;">
+    <div class="slds-card slds-theme_shade" if:true={isError}>
+        <div class="slds-card__header slds-grid">
+          <div class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_error" role="alert">
+            <h2>{placeholdererrorText}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="slds-card slds-theme_shade" if:true={isSuccess}>
+        <div class="slds-card__header slds-grid">
+          <div class="slds-notify slds-notify_alert slds-theme_alert-texture slds-theme_success" role="status">
+            <h2>{placeholderSuccessText}</h2>
+            </div>
+        </div>
+    </div>
+    <div class ='slds-p-around_x-small slds-grid'>
+        <div class="slds-p-horizontal_small slds-col slds-size_1-of-12"></div>
+        <div class="slds-p-horizontal_small slds-col slds-size_10-of-12">
+            <div class="slds-p-around_x-small slds-grid">
+                <div class="slds-p-horizontal_small slds-col slds-size_1-of-3"></div>
+                <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">
+                    <lightning-combobox
+                        class ="classGuideName"
+                        name="classGuideName"
+                        label="Class Guide Name"
+                        value={placeholerClassGuideName}
+                        placeholder={placeholerClassGuideName}
+                        options={optionsclassGuideName}
+                        onchange={handleclassGuideNameChange} ></lightning-combobox>
+                </div>
+                <div class="slds-p-horizontal_small slds-col slds-size_1-of-3"></div>
+            </div>
+            <div if:true={showNewClassGuideFields}>
+                <div class="slds-p-around_x-small slds-grid">
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-12"></div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_5-of-12">
+                        <label class="slds-form-element__label">New Class Guide Name</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-input type="text" value={valueNewClassGuide} onchange={newClassGuideChange} variant="label-hidden" class = "newClassText-input"></lightning-input>
+                        </div>
+                    </div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_5-of-12">
+                        <label class="slds-form-element__label">Partner</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-input type="text" value={valuePartner} onchange={partnerChange} variant="label-hidden" class = "newPartnerText-input"></lightning-input>
+                        </div>
+                    </div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-12"></div>
+                </div>
+            </div>
+            <div class = "slds-p-around_x-small" if:true={showClassGuideBuilderFilters}>
+                <div class="slds-p-around_x-small slds-grid">
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3"> 
+                        <lightning-combobox
+                            class="ethnicity-input-checkbox"
+                            name="ethnicity-input"
+                            label="Ethnicity"
+                            value={valueEthnicity}
+                            options={optionsEthnicity}
+                            placeholder={valueEthnicity}
+                            onchange={handleChangeEthnicity} ></lightning-combobox>
+                    </div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                                <label class="slds-form-element__label">Makes</label> 
+                                <div class="slds-input-has-icon slds-input-has-icon_right">
+                                <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                        style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                                <lightning-input type="text" placeholder={placeholderMakes} value={makesValue}  variant="label-hidden" onclick={showPicklistLogic} class = "makes-input"></lightning-input>
+                                <template if:true={showMakesPicklist}>
+                                    <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                        <ul class="slds-listbox slds-listbox_vertical">
+                                            <li class="slds-listbox__item slds-border_bottom">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                            <span class="slds-media__figure slds-listbox__option-icon">    
+                                                <template if:true={selectAllMakes}>
+                                                    <lightning-input type="checkbox" value='SelectAll' class='select-all-makes' checked onchange={onSelect}></lightning-input>
+                                                </template>
+                                                <template if:false={selectAllMakes}>
+                                                    <lightning-input type="checkbox" value='SelectAll' class='select-all-makes-unchecked' onchange={onSelect}></lightning-input>
+                                                </template>
+                                            </span>
+                                            <span class="slds-media__body">
+                                                <span class="slds-truncate" title='Name' style="font-weight:bold">All Makes</span>
+                                            </span>
+                                            </div>
+                                            </li>
+                                            <template for:each={optionsMakes} for:item="option">
+                                                <template if:true={option.show}>
+                                                    <li key={option.index} class="slds-listbox__item">
+                                                        <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                        <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                                <template if:true={option.checked}>
+                                                                    <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="makes-input-checkbox"></lightning-input>
+                                                                </template>
+                                                                <template if:false={option.checked}>
+                                                                    <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="makes-input-checkbox"></lightning-input>
+                                                                </template>
+                                                        </span>
+                                                        <span class="slds-media__body">
+                                                            <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                        </span>
+                                                        </div>                                
+                                                    </li>
+                                                </template>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>  
+                            </div>
+                            </div>
+                            <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">
+                                <label class="slds-form-element__label">Body Style</label>
+                                <div class="slds-input-has-icon slds-input-has-icon_right">
+                                    <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon"
+                                        style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                                    <lightning-input type="text" value={valueBodyStyle} variant="label-hidden" onclick={showPicklistLogic}
+                                        class="bodyStyle-input" disabled={isDisabled}></lightning-input>
+                                    <template if:true={showBodyStylePicklist}>
+                                        <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                            <ul class="slds-listbox slds-listbox_vertical">
+                                                <template for:each={optionsBodyStyle} for:item="option">
+                                                    <template if:true={option.show}>
+                                                        <li key={option.index} class="slds-listbox__item">
+                                                            <div
+                                                                class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                                <span class="slds-media__figure slds-listbox__option-icon">
+                                                                    <template if:true={option.checked}>
+                                                                        <lightning-input type="checkbox" value={option.label} checked
+                                                                            onchange={onSelect} class="bodyStyle-input-checkbox"></lightning-input>
+                                                                    </template>
+                                                                    <template if:false={option.checked}>
+                                                                        <lightning-input type="checkbox" value={option.label} onchange={onSelect}
+                                                                            class="bodyStyle-input-checkbox"></lightning-input>
+                                                                    </template>
+                                                                </span>
+                                                                <span class="slds-media__body">
+                                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                                </span>
+                                                            </div>
+                                                        </li>
+                                                    </template>
+                                                </template>
+                                            </ul>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                            
+                </div> 
+                <div class="slds-p-around_x-small slds-grid">
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">
+                        <label class="slds-form-element__label">Models</label>
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                            <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon"
+                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                            <lightning-input type="text" placeholder={placeholderModels} value={modelsValue} variant="label-hidden"
+                                onclick={showPicklistLogic} class="model-input"></lightning-input>
+                            <template if:true={showModelsPicklist}>
+                                <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                    <ul class="slds-listbox slds-listbox_vertical">
+                                        <li class="slds-listbox__item slds-border_bottom">
+                                            <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">
+                                                    <template if:true={selectAllmodels}>
+                                                        <lightning-input type="checkbox" value='SelectAll' class='select-all-models' checked
+                                                            onchange={onSelect}></lightning-input>
+                                                    </template>
+                                                    <template if:false={selectAllmodels}>
+                                                        <lightning-input type="checkbox" value='SelectAll'
+                                                            class='select-all-models-unchecked' onchange={onSelect}></lightning-input>
+                                                    </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title='Name' style="font-weight:bold">All Models</span>
+                                                </span>
+                                            </div>
+                                        </li>
+                                        <template for:each={optionsModels} for:item="option">
+                                            <template if:true={option.show}>
+                                                <li key={option.index} class="slds-listbox__item">
+                                                    <div
+                                                        class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                        <span class="slds-media__figure slds-listbox__option-icon">
+                                                            <template if:true={option.checked}>
+                                                                <lightning-input type="checkbox" value={option.label} checked
+                                                                    onchange={onSelect} class="model-input-checkbox"></lightning-input>
+                                                            </template>
+                                                            <template if:false={option.checked}>
+                                                                <lightning-input type="checkbox" value={option.label} onchange={onSelect}
+                                                                    class="model-input-checkbox"></lightning-input>
+                                                            </template>
+                                                        </span>
+                                                        <span class="slds-media__body">
+                                                            <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                        </span>
+                                                    </div>
+                                                </li>
+                                            </template>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Trims</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                        <lightning-input type="text" value={valueTrims}  variant="label-hidden" onclick={showPicklistLogic} class = "trim-input" disabled={isDisabled}></lightning-input>
+                        <template if:true={showTrimsPicklist}>
+                            <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                <ul class="slds-listbox slds-listbox_vertical">
+                                    <template for:each={optionsTrims} for:item="option">
+                                        <template if:true={option.show}>
+                                            <li key={option.index} class="slds-listbox__item">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                        <template if:true={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="trims-input-checkbox"></lightning-input>
+                                                        </template>
+                                                        <template if:false={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="trims-input-checkbox"></lightning-input>
+                                                        </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                                </div>                                
+                                            </li>
+                                        </template>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>  
+                    </div>
+                    </div>
+
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Engine</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                        <lightning-input type="text" value={valueEngines}  variant="label-hidden" onclick={showPicklistLogic} class = "engines-input" disabled={isDisabled}></lightning-input>
+                        <template if:true={showEnginesPicklist}>
+                            <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                <ul class="slds-listbox slds-listbox_vertical">
+                                    <template for:each={optionsEngines} for:item="option">
+                                        <template if:true={option.show}>
+                                            <li key={option.index} class="slds-listbox__item">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                        <template if:true={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="engines-input-checkbox"></lightning-input>
+                                                        </template>
+                                                        <template if:false={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="engines-input-checkbox"></lightning-input>
+                                                        </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                                </div>                                
+                                            </li>
+                                        </template>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>  
+                    </div>
+                    </div>
+                </div>
+                <div class="slds-p-around_x-small slds-grid">
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Cylinders</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                        <lightning-input type="text" value={valueCylinders}  variant="label-hidden" onclick={showPicklistLogic} class = "cylinders-input" disabled={isDisabled}></lightning-input>
+                        <template if:true={showCylindersPicklist}>
+                            <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                <ul class="slds-listbox slds-listbox_vertical">
+                                    <template for:each={optionsCylinders} for:item="option">
+                                        <template if:true={option.show}>
+                                            <li key={option.index} class="slds-listbox__item">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                        <template if:true={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="cylinders-input-checkbox"></lightning-input>
+                                                        </template>
+                                                        <template if:false={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="cylinders-input-checkbox"></lightning-input>
+                                                        </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                                </div>                                
+                                            </li>
+                                        </template>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>  
+                    </div>
+                    </div>
+
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Aspiration</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                        <lightning-input type="text" value={valueAspiration}  variant="label-hidden" onclick={showPicklistLogic} class = "aspiration-input" disabled={isDisabled}></lightning-input>
+                        <template if:true={showAspirationPicklist}>
+                            <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                <ul class="slds-listbox slds-listbox_vertical">
+                                    <template for:each={optionsAspiration} for:item="option">
+                                        <template if:true={option.show}>
+                                            <li key={option.index} class="slds-listbox__item">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                        <template if:true={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="aspiration-input-checkbox"></lightning-input>
+                                                        </template>
+                                                        <template if:false={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="aspiration-input-checkbox"></lightning-input>
+                                                        </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                                </div>                                
+                                            </li>
+                                        </template>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>  
+                    </div>
+                        </div>
+
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                            <label class="slds-form-element__label">Fuel</label> 
+                            <div class="slds-input-has-icon slds-input-has-icon_right">
+                            <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                    style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                            <lightning-input type="text" value={valueFuel}  variant="label-hidden" onclick={showPicklistLogic} class = "fuel-input" disabled={isDisabled}></lightning-input>
+                            <template if:true={showFuelPicklist}>
+                                <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                    <ul class="slds-listbox slds-listbox_vertical">
+                                        <template for:each={optionsFuel} for:item="option">
+                                            <template if:true={option.show}>
+                                                <li key={option.index} class="slds-listbox__item">
+                                                    <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                    <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                            <template if:true={option.checked}>
+                                                                <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="fuel-input-checkbox"></lightning-input>
+                                                            </template>
+                                                            <template if:false={option.checked}>
+                                                                <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="fuel-input-checkbox"></lightning-input>
+                                                            </template>
+                                                    </span>
+                                                    <span class="slds-media__body">
+                                                        <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                    </span>
+                                                    </div>                                
+                                                </li>
+                                            </template>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </template>  
+                        </div>
+                    </div>
+                </div>
+                <div class="slds-p-around_x-small slds-grid">                  
+                    
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Drive</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                        <lightning-input type="text" value={valueDrive}  variant="label-hidden" onclick={showPicklistLogic} class = "drive-input" disabled={isDisabled}></lightning-input>
+                        <template if:true={showDrivePicklist}>
+                            <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                <ul class="slds-listbox slds-listbox_vertical">
+                                    <template for:each={optionsDrive} for:item="option">
+                                        <template if:true={option.show}>
+                                            <li key={option.index} class="slds-listbox__item">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                        <template if:true={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="drive-input-checkbox"></lightning-input>
+                                                        </template>
+                                                        <template if:false={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="drive-input-checkbox"></lightning-input>
+                                                        </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                                </div>                                
+                                            </li>
+                                        </template>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>  
+                    </div>
+                    </div>
+
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Tonnage</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon" 
+                                                                style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                        <lightning-input type="text" value={valueTonnage}  variant="label-hidden" onclick={showPicklistLogic} class = "tonnage-input" disabled={isDisabled}></lightning-input>
+                        <template if:true={showTonnagePicklist}>
+                            <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                                <ul class="slds-listbox slds-listbox_vertical">
+                                    <template for:each={optionsTonnage} for:item="option">
+                                        <template if:true={option.show}>
+                                            <li key={option.index} class="slds-listbox__item">
+                                                <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">                                        
+                                                        <template if:true={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} checked onchange={onSelect} class="tonnage-input-checkbox"></lightning-input>
+                                                        </template>
+                                                        <template if:false={option.checked}>
+                                                            <lightning-input type="checkbox" value={option.label} onchange={onSelect} class="tonnage-input-checkbox"></lightning-input>
+                                                        </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                                </div>                                
+                                            </li>
+                                        </template>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>  
+                    </div>
+                        </div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">VIN Prefix</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-input type="text" value={valueVINPrefix} onchange={populateOptionsText} variant="label-hidden" class = "vinPrefix-input" disabled={isDisabled}></lightning-input> 
+                    </div>
+                    </div>
+                </div>
+                <div class="slds-p-around_x-small slds-grid">
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3"></div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3">   
+                        <label class="slds-form-element__label">Rate Class</label> 
+                        <div class="slds-input-has-icon slds-input-has-icon_right">
+                        <lightning-input type="text" value={valueRateClass} onchange={populateOptionsText} variant="label-hidden" class = "rateClass-input"></lightning-input>
+                    </div>
+                    </div>
+                    <div class="slds-p-horizontal_small slds-col slds-size_1-of-3"></div>
+                </div>
+                <div class="slds-p-around_x-small " style="text-align:center">
+                        <lightning-button 
+                        label="Save" 
+                        onclick={saveClassGuide} 
+                        class="slds-m-top_medium"
+                        variant="brand-outline"
+                        disabled={isDisabled}>
+                    </lightning-button>
+                </div>
+            </div>
+        </div>
+        <div class="slds-p-horizontal_small slds-col slds-size_1-of-12"></div>
+    </div>
+</div>
+</template>

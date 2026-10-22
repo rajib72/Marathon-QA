@@ -1,0 +1,1055 @@
+<template>
+    <article class="slds-card editor-shell">
+        <template lwc:if={isLoading}>
+            <div class="loading-overlay" role="status" aria-live="polite">
+                <lightning-spinner
+                    alternative-text="Processing claim items"
+                    size="medium">
+                </lightning-spinner>
+            </div>
+        </template>
+
+        <header class="slds-card__header editor-header">
+            <div class="header-layout">
+                <div class="slds-media slds-media_center header-title-group">
+                    <div class="slds-media__figure">
+                        <span class="slds-icon_container header-icon" title="Claim Item Editor">
+                            <lightning-icon
+                                icon-name="standard:record"
+                                alternative-text="Claim Item Editor"
+                                size="small">
+                            </lightning-icon>
+                        </span>
+                    </div>
+
+                    <div class="slds-media__body">
+                        <h2 class="slds-card__header-title editor-title">
+                            Claim Item Editor
+                        </h2>
+
+                        <div class="editor-meta" aria-live="polite">
+                            <span>{rowCountLabel}</span>
+                            <span class="meta-separator" aria-hidden="true">•</span>
+                            <span>{selectedCountLabel}</span>
+
+                            <template lwc:if={isDirty}>
+                                <span class="meta-separator" aria-hidden="true">•</span>
+                                <span class="unsaved-indicator">
+                                    <span class="unsaved-dot" aria-hidden="true"></span>
+                                    Unsaved changes
+                                </span>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="header-actions" aria-label="Claim Item actions">
+                    <lightning-button
+                        label="Add Job"
+                        icon-name="utility:add"
+                        variant="neutral"
+                        onclick={handleAddJob}
+                        disabled={isLoading}>
+                    </lightning-button>
+
+                    <lightning-button
+                        label="Add Job Detail"
+                        icon-name="utility:rows"
+                        variant="neutral"
+                        onclick={openAddJobDetailModal}
+                        disabled={isAddJobDetailDisabled}>
+                    </lightning-button>
+
+                    <lightning-button
+    label={bulkUpdateLabel}
+    icon-name="utility:edit_form"
+    variant="neutral"
+    onclick={openMassUpdateModal}
+    disabled={isBulkUpdateDisabled}>
+</lightning-button>
+
+<template lwc:if={showRequestInspection}>
+    <lightning-button
+        label="Request an Inspection"
+        icon-name="utility:search"
+        variant="neutral"
+        onclick={handleRequestInspection}
+        disabled={isLoading}>
+    </lightning-button>
+</template>
+
+<lightning-button
+    label="Check BOK"
+    icon-name="utility:check"
+    variant="neutral"
+    onclick={handleCheckBokLines}
+    disabled={isLoading}>
+</lightning-button>
+
+                    <lightning-button
+                        label="Authorize All Lines"
+                        icon-name="utility:approval"
+                        variant="neutral"
+                        onclick={handleAuthorizeAllLines}
+                        disabled={isLoading}>
+                    </lightning-button>
+
+                    <lightning-button
+                        label="Confirm Allocations"
+                        icon-name="utility:moneybag"
+                        variant="neutral"
+                        onclick={handleConfirmAllocations}
+                        disabled={isLoading}>
+                    </lightning-button>
+                </div>
+            </div>
+        </header>
+
+        <template lwc:if={hasValidationErrors}>
+            <section
+                class="validation-summary slds-notify slds-notify_alert slds-alert_error"
+                role="alert"
+                tabindex="-1"
+                data-error-summary>
+                <span class="slds-assistive-text">Error</span>
+
+                <lightning-icon
+                    icon-name="utility:error"
+                    alternative-text="Error"
+                    size="small"
+                    variant="inverse"
+                    class="validation-icon">
+                </lightning-icon>
+
+                <div class="validation-content">
+                    <h3 class="slds-text-heading_small">
+                        Please correct the following fields
+                    </h3>
+
+                    <ul class="slds-list_dotted validation-list">
+                        <template for:each={validationErrors} for:item="error">
+                            <li key={error}>{error}</li>
+                        </template>
+                    </ul>
+                </div>
+
+                <lightning-button-icon
+                    icon-name="utility:close"
+                    alternative-text="Dismiss validation messages"
+                    title="Dismiss"
+                    variant="bare-inverse"
+                    onclick={dismissValidationErrors}>
+                </lightning-button-icon>
+            </section>
+        </template>
+
+        <template lwc:if={isEditorExpanded}>
+        <template lwc:if={hasRows}>
+            <div class="selection-toolbar">
+                <lightning-input
+                    type="checkbox"
+                    label="Select all claim items"
+                    variant="label-hidden"
+                    checked={isAllSelected}
+                    data-header-checkbox
+                    onchange={handleSelectAll}>
+                </lightning-input>
+
+                <span>Select all Claim Items</span>
+            </div>
+
+            <div
+                class="table-container claim-item-list-container"
+                tabindex="0"
+                role="region"
+                aria-label="Editable Claim Item list">
+
+                <div class="claim-item-list" role="list">
+                    <template for:each={data} for:item="row">
+                        <section
+                            key={row.uniqueKey}
+                            class={row.rowClass}
+                            role="listitem">
+
+                            <!-- LINE 1 -->
+                            <div class="compact-grid compact-grid_primary">
+                                <div class="utility-cell utility-cell_select">
+                                    <lightning-input
+                                        type="checkbox"
+                                        label="Select claim item"
+                                        variant="label-hidden"
+                                        checked={row.isSelected}
+                                        data-id={row.uniqueKey}
+                                        onchange={handleRowSelection}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block field-block_job">
+                                    <span class="field-label">Job</span>
+                                    <div
+                                        class={row.JobNumberReadOnlyClass}
+                                        title={row.Job_Number__c}
+                                        aria-label="System assigned Job number">
+                                        {row.Job_Number__c}
+                                    </div>
+                                </div>
+
+                                <div class="field-block field-block_loss">
+                                    <span class="field-label">Loss Component</span>
+                                    <div class={row.LossDescriptionErrorClass}>
+                                        <button
+                                            type="button"
+                                            class="lookup-control__main"
+                                            title={row.CoverageLevelDetailName}
+                                            aria-label="Select Loss Component"
+                                            data-id={row.uniqueKey}
+                                            data-value={row.Coverage_Level_Detail__c}
+                                            data-label={row.CoverageLevelDetailName}
+                                            onclick={openLookupPopup}>
+                                            <lightning-icon
+                                                icon-name="utility:search"
+                                                alternative-text="Search"
+                                                size="xx-small">
+                                            </lightning-icon>
+
+                                            <span class={row.LossDescriptionTextClass}>
+                                                {row.LossDescriptionDisplay}
+                                            </span>
+                                        </button>
+
+                                        <template lwc:if={row.CoverageLevelDetailName}>
+                                            <lightning-button-icon
+                                                icon-name="utility:close"
+                                                alternative-text="Clear Loss Component"
+                                                title="Clear Loss Component"
+                                                variant="bare"
+                                                size="small"
+                                                class="lookup-control__clear"
+                                                data-id={row.uniqueKey}
+                                                onclick={clearLossDescriptionValue}>
+                                            </lightning-button-icon>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="field-block field-block_payee-type">
+                                    <span class="field-label">Payee Type</span>
+                                    <button
+                                        type="button"
+                                        class={row.CategoryButtonClass}
+                                        title={row.CategoryDisplay}
+                                        aria-haspopup="listbox"
+                                        data-id={row.uniqueKey}
+                                        data-field="Category"
+                                        data-value={row.Category}
+                                        onclick={openPicklistPopup}>
+                                        <span class="field-trigger__text">
+                                            {row.CategoryDisplay}
+                                        </span>
+
+                                        <lightning-icon
+                                            icon-name="utility:chevrondown"
+                                            alternative-text="Open Payee Type options"
+                                            size="xx-small">
+                                        </lightning-icon>
+                                    </button>
+                                </div>
+
+                                <div class="field-block field-block_payee">
+                                    <span class="field-label">Payee</span>
+                                    <div class={row.PayeeErrorClass}>
+                                        <button
+                                            type="button"
+                                            class="lookup-control__main"
+                                            title={row.PayeeName}
+                                            aria-label="Select Payee"
+                                            data-id={row.uniqueKey}
+                                            data-value={row.Payee_Name__c}
+                                            data-label={row.PayeeName}
+                                            onclick={openPayeeLookupPopup}>
+                                            <lightning-icon
+                                                icon-name="utility:search"
+                                                alternative-text="Search"
+                                                size="xx-small">
+                                            </lightning-icon>
+
+                                            <span class={row.PayeeTextClass}>
+                                                {row.PayeeDisplay}
+                                            </span>
+                                        </button>
+
+                                        <template lwc:if={row.PayeeName}>
+                                            <lightning-button-icon
+                                                icon-name="utility:close"
+                                                alternative-text="Clear Payee"
+                                                title="Clear Payee"
+                                                variant="bare"
+                                                size="small"
+                                                class="lookup-control__clear"
+                                                data-id={row.uniqueKey}
+                                                onclick={clearPayeeValue}>
+                                            </lightning-button-icon>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="field-block field-block_bok">
+                                    <span class="field-label">BOK</span>
+                                    <div class="field-control field-control_left">
+                                        <lightning-input
+                                            type="checkbox"
+                                            label="BOK"
+                                            variant="label-hidden"
+                                            checked={row.Wex__c}
+                                            disabled>
+                                        </lightning-input>
+                                    </div>
+                                </div>
+
+                                <div class="field-block field-block_detail-type">
+                                    <span class="field-label">Detail Type</span>
+                                    <button
+                                        type="button"
+                                        class={row.DetailTypeButtonClass}
+                                        title={row.DetailTypeDisplay}
+                                        aria-haspopup="listbox"
+                                        data-id={row.uniqueKey}
+                                        data-field="Detail_Type__c"
+                                        data-value={row.Detail_Type__c}
+                                        onclick={openPicklistPopup}>
+                                        <span class="field-trigger__text">
+                                            {row.DetailTypeDisplay}
+                                        </span>
+
+                                        <lightning-icon
+                                            icon-name="utility:chevrondown"
+                                            alternative-text="Open Detail Type options"
+                                            size="xx-small">
+                                        </lightning-icon>
+                                    </button>
+                                </div>
+
+                                <div class="field-block field-block_description">
+                                    <span class="field-label">Description</span>
+                                    <lightning-input
+                                        label="Description"
+                                        variant="label-hidden"
+                                        value={row.Description}
+                                        data-id={row.uniqueKey}
+                                        data-field="Description"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="utility-cell utility-cell_delete claim-item-delete">
+                                    <lightning-button-icon
+                                        icon-name="utility:delete"
+                                        alternative-text="Delete Claim Item"
+                                        title="Delete Claim Item"
+                                        variant="bare"
+                                        class="delete-button"
+                                        data-id={row.uniqueKey}
+                                        onclick={handleDeleteRow}
+                                        disabled={isLoading}>
+                                    </lightning-button-icon>
+                                </div>
+                            </div>
+
+                            <!-- LINE 2 -->
+                            <div class="compact-grid compact-grid_secondary">
+                                <div class="utility-cell utility-cell_spacer" aria-hidden="true"></div>
+
+                                <div class="field-block field-block_part">
+                                    <span class="field-label">Part#</span>
+                                    <lightning-input
+                                        label="Part Number"
+                                        variant="label-hidden"
+                                        value={row.Part_Number__c}
+                                        data-id={row.uniqueKey}
+                                        data-field="Part_Number__c"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block field-block_invoice">
+                                    <span class="field-label">Invoice Number</span>
+                                    <lightning-input
+                                        class={row.Invoice_Number__cError}
+                                        label="Invoice Number"
+                                        variant="label-hidden"
+                                        value={row.Invoice_Number__c}
+                                        data-id={row.uniqueKey}
+                                        data-field="Invoice_Number__c"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block">
+                                    <span class="field-label">Req Rate</span>
+                                    <lightning-input
+                                        type="number"
+                                        step="0.01"
+                                        label="Requested Rate"
+                                        variant="label-hidden"
+                                        value={row.Processed_Parts__c}
+                                        data-id={row.uniqueKey}
+                                        data-field="Processed_Parts__c"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block">
+                                    <span class="field-label">Req Qty</span>
+                                    <lightning-input
+                                        type="number"
+                                        step="0.01"
+                                        label="Requested Quantity"
+                                        variant="label-hidden"
+                                        value={row.Gross_Quantity__c}
+                                        data-id={row.uniqueKey}
+                                        data-field="Gross_Quantity__c"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block">
+                                    <span class="field-label">Adj Rate</span>
+                                    <lightning-input
+                                        class={row.Rate__cError}
+                                        type="number"
+                                        step="0.01"
+                                        label="Adjusted Rate"
+                                        variant="label-hidden"
+                                        value={row.Rate__c}
+                                        data-id={row.uniqueKey}
+                                        data-field="Rate__c"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block">
+                                    <span class="field-label">Adj Qty</span>
+                                    <lightning-input
+                                        class={row.Quantity__cError}
+                                        type="number"
+                                        step="0.01"
+                                        label="Adjusted Quantity"
+                                        variant="label-hidden"
+                                        value={row.Quantity__c}
+                                        data-id={row.uniqueKey}
+                                        data-field="Quantity__c"
+                                        onchange={handleFieldChange}>
+                                    </lightning-input>
+                                </div>
+
+                                <div class="field-block amount-cell">
+                                    <span class="field-label">Tax</span>
+                                    <div
+                                        class="calculated-field"
+                                        role="textbox"
+                                        aria-readonly="true"
+                                        aria-label="Calculated Tax"
+                                        title="Calculated Tax">
+                                        <span class="calculated-field__value">
+                                            <lightning-formatted-number
+                                                value={row.Tax_New__c}
+                                                format-style="currency"
+                                                currency-display-as="symbol"
+                                                minimum-fraction-digits="2"
+                                                maximum-fraction-digits="2">
+                                            </lightning-formatted-number>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field-block amount-cell">
+                                    <span class="field-label">Net Claim</span>
+                                    <div
+                                        class="calculated-field"
+                                        role="textbox"
+                                        aria-readonly="true"
+                                        aria-label="Calculated Net Claim"
+                                        title="Calculated Net Claim">
+                                        <span class="calculated-field__value">
+                                            <lightning-formatted-number
+                                                value={row.NetClaim__c}
+                                                format-style="currency"
+                                                currency-display-as="symbol"
+                                                minimum-fraction-digits="2"
+                                                maximum-fraction-digits="2">
+                                            </lightning-formatted-number>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field-block field-block_status">
+                                    <span class="field-label">Status</span>
+                                    <button
+                                        type="button"
+                                        class={row.StatusButtonClass}
+                                        title={row.StatusDisplay}
+                                        aria-haspopup="listbox"
+                                        data-id={row.uniqueKey}
+                                        data-field="Status__c"
+                                        data-value={row.Status__c}
+                                        onclick={openPicklistPopup}>
+                                        <span class="field-trigger__text">
+                                            {row.StatusDisplay}
+                                        </span>
+
+                                        <lightning-icon
+                                            icon-name="utility:chevrondown"
+                                            alternative-text="Open Status options"
+                                            size="xx-small">
+                                        </lightning-icon>
+                                    </button>
+                                </div>
+
+                                <div class="field-block field-block_reason">
+                                    <span class="field-label">Reason</span>
+                                    <button
+                                        type="button"
+                                        class={row.ReasonButtonClass}
+                                        title={row.ReasonDisplay}
+                                        aria-haspopup="listbox"
+                                        data-id={row.uniqueKey}
+                                        data-field="Reason__c"
+                                        data-value={row.Reason__c}
+                                        onclick={openPicklistPopup}>
+                                        <span class="field-trigger__text">
+                                            {row.ReasonDisplay}
+                                        </span>
+
+                                        <lightning-icon
+                                            icon-name="utility:chevrondown"
+                                            alternative-text="Open Reason options"
+                                            size="xx-small">
+                                        </lightning-icon>
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <template lwc:else>
+            <div class="empty-state">
+                <lightning-icon
+                    icon-name="utility:table"
+                    alternative-text="No claim items"
+                    size="large">
+                </lightning-icon>
+
+                <h3>No claim items yet</h3>
+                <p>Add a job to begin entering claim item details.</p>
+
+                <lightning-button
+                    label="Add First Job"
+                    icon-name="utility:add"
+                    variant="brand"
+                    onclick={handleAddJob}
+                    disabled={isLoading}>
+                </lightning-button>
+            </div>
+        </template>
+
+        <footer class="editor-footer">
+            <div class="footer-status" aria-live="polite">
+                <template lwc:if={isDirty}>
+                    Changes are stored only after you click Save.
+                </template>
+
+                <template lwc:else>
+                    All displayed changes are saved.
+                </template>
+            </div>
+
+            <div class="footer-actions">
+                <lightning-button
+                    label="Cancel"
+                    variant="neutral"
+                    onclick={handleCancel}
+                    disabled={isLoading}>
+                </lightning-button>
+
+                <lightning-button
+                    label="Save Claim Items"
+                    icon-name="utility:save"
+                    variant="brand"
+                    onclick={handleSave}
+                    disabled={isLoading}>
+                </lightning-button>
+            </div>
+        </footer>
+        </template>
+    </article>
+
+    <!-- Picklist editor -->
+    <template lwc:if={showPicklistPopup}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="picklist-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_small">
+                <header class="slds-modal__header modal-header">
+                    <h2 id="picklist-modal-heading" class="slds-text-heading_medium">
+                        Edit {popupFieldLabel}
+                    </h2>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closePicklistPopup}>
+                    </lightning-button-icon>
+                </header>
+
+                <div class="slds-modal__content slds-p-around_medium modal-content">
+                    <lightning-combobox
+                        label={popupFieldLabel}
+                        value={popupSelectedValue}
+                        options={popupOptions}
+                        onchange={handlePopupPicklistChange}>
+                    </lightning-combobox>
+                </div>
+
+                <footer class="slds-modal__footer modal-footer">
+                    <lightning-button label="Cancel" onclick={closePicklistPopup}></lightning-button>
+                    <lightning-button
+                        label="Apply"
+                        variant="brand"
+                        onclick={applyPopupPicklistValue}>
+                    </lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- Payee lookup -->
+    <template lwc:if={showPayeeLookupPopup}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="payee-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_lookup">
+                <header class="slds-modal__header modal-header">
+                    <h2 id="payee-modal-heading" class="slds-text-heading_medium">Search Payee</h2>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closePayeeLookupPopup}>
+                    </lightning-button-icon>
+                </header>
+
+                <div class="slds-modal__content slds-p-around_medium lookup-modal-body">
+                    <lightning-input
+                        label="Payee"
+                        type="search"
+                        value={payeeSearchTerm}
+                        onchange={handlePayeeLookupSearch}
+                        placeholder="Type at least 2 characters...">
+                    </lightning-input>
+
+                    <template lwc:if={payeeSelectedName}>
+                        <div class="selected-value-box">
+                            <span class="selected-value-label">Selected Payee</span>
+                            <strong>{payeeSelectedName}</strong>
+                        </div>
+                    </template>
+
+                    <div class="lookup-results" aria-live="polite">
+                        <template lwc:if={isPayeeSearching}>
+                            <div class="lookup-searching">
+                                <lightning-spinner
+                                    alternative-text="Searching payees"
+                                    size="small">
+                                </lightning-spinner>
+                            </div>
+                        </template>
+
+                        <template lwc:elseif={hasPayeeResults}>
+                            <template for:each={payeeResults} for:item="result">
+                                <button
+                                    key={result.Id}
+                                    type="button"
+                                    class={result.cssClass}
+                                    data-id={result.Id}
+                                    data-name={result.Name}
+                                    onclick={selectPayeeLookupValue}>
+                                    <lightning-icon
+                                        icon-name="standard:account"
+                                        alternative-text="Account"
+                                        size="small">
+                                    </lightning-icon>
+                                    <span>{result.Name}</span>
+                                    <template lwc:if={result.isSelected}>
+                                        <lightning-icon
+                                            icon-name="utility:check"
+                                            alternative-text="Selected"
+                                            size="x-small"
+                                            class="result-selected-icon">
+                                        </lightning-icon>
+                                    </template>
+                                </button>
+                            </template>
+                        </template>
+
+                        <template lwc:else>
+                            <div class="lookup-message">
+                                <lightning-icon
+                                    icon-name="utility:search"
+                                    alternative-text="Search"
+                                    size="small">
+                                </lightning-icon>
+                                <span>{payeeSearchMessage}</span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <footer class="slds-modal__footer modal-footer">
+                    <lightning-button label="Cancel" onclick={closePayeeLookupPopup}></lightning-button>
+                    <lightning-button
+                        label="Apply Payee"
+                        variant="brand"
+                        onclick={applyPayeeLookupValue}
+                        disabled={isPayeeApplyDisabled}>
+                    </lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- Loss Description lookup -->
+    <template lwc:if={showLookupPopup}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="loss-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_lookup">
+                <header class="slds-modal__header modal-header">
+                    <h2 id="loss-modal-heading" class="slds-text-heading_medium">
+                        Search Loss Component
+                    </h2>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closeLookupPopup}>
+                    </lightning-button-icon>
+                </header>
+
+                <div class="slds-modal__content slds-p-around_medium lookup-modal-body">
+                    <lightning-input
+                        label="Loss Component"
+                        type="search"
+                        value={lookupSearchTerm}
+                        onchange={handleLookupSearch}
+                        placeholder="Type at least 2 characters...">
+                    </lightning-input>
+
+                    <template lwc:if={lookupSelectedName}>
+                        <div class="selected-value-box">
+                            <span class="selected-value-label">Selected Loss Component</span>
+                            <strong>{lookupSelectedName}</strong>
+                        </div>
+                    </template>
+
+                    <div class="lookup-results" aria-live="polite">
+                        <template lwc:if={isLookupSearching}>
+                            <div class="lookup-searching">
+                                <lightning-spinner
+                                    alternative-text="Searching loss descriptions"
+                                    size="small">
+                                </lightning-spinner>
+                            </div>
+                        </template>
+
+                        <template lwc:elseif={hasLookupResults}>
+                            <template for:each={lookupResults} for:item="result">
+                                <button
+                                    key={result.Id}
+                                    type="button"
+                                    class={result.cssClass}
+                                    data-id={result.Id}
+                                    data-name={result.Name}
+                                    onclick={selectLookupValue}>
+                                    <lightning-icon
+                                        icon-name="standard:record"
+                                        alternative-text="Loss Component"
+                                        size="small">
+                                    </lightning-icon>
+                                    <span>{result.Name}</span>
+                                    <template lwc:if={result.isSelected}>
+                                        <lightning-icon
+                                            icon-name="utility:check"
+                                            alternative-text="Selected"
+                                            size="x-small"
+                                            class="result-selected-icon">
+                                        </lightning-icon>
+                                    </template>
+                                </button>
+                            </template>
+                        </template>
+
+                        <template lwc:else>
+                            <div class="lookup-message">
+                                <lightning-icon
+                                    icon-name="utility:search"
+                                    alternative-text="Search"
+                                    size="small">
+                                </lightning-icon>
+                                <span>{lookupSearchMessage}</span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <footer class="slds-modal__footer modal-footer">
+                    <lightning-button label="Cancel" onclick={closeLookupPopup}></lightning-button>
+                    <lightning-button
+                        label="Apply Loss Component"
+                        variant="brand"
+                        onclick={applyLookupValue}
+                        disabled={isLookupApplyDisabled}>
+                    </lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- BOK flow -->
+    <template lwc:if={showBokFlow}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="bok-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_flow">
+                <header class="slds-modal__header modal-header">
+                    <h2 id="bok-modal-heading" class="slds-text-heading_medium">Check BOK</h2>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closeBokFlow}>
+                    </lightning-button-icon>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium flow-modal-body">
+                    <lightning-flow
+                        flow-api-name="Claim_Update_WEX_on_ClaimItems"
+                        flow-input-variables={flowInputVariables}
+                        onstatuschange={handleFlowStatusChange}>
+                    </lightning-flow>
+                </div>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- Authorization flow -->
+    <template lwc:if={showAuthorizeAllLines}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="authorize-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_flow">
+                <header class="slds-modal__header modal-header">
+                    <h2 id="authorize-modal-heading" class="slds-text-heading_medium">
+                        Authorize All Lines
+                    </h2>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closeAuthorizeAllLines}>
+                    </lightning-button-icon>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium flow-modal-body">
+                    <lightning-flow
+                        flow-api-name="ClaimItemsAuthorization"
+                        flow-input-variables={flowInputVariables}
+                        onstatuschange={handleAuthorizeFlowStatusChange}>
+                    </lightning-flow>
+                </div>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- Allocation flow -->
+    <template lwc:if={showConfirmAllocation}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="allocation-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_flow">
+                <header class="slds-modal__header modal-header">
+                    <h2 id="allocation-modal-heading" class="slds-text-heading_medium">
+                        Confirm Allocation
+                    </h2>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closeConfirmAllocation}>
+                    </lightning-button-icon>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium flow-modal-body">
+                    <lightning-flow
+                        flow-api-name="ClaimItemsPaymentAllocation"
+                        flow-input-variables={flowInputVariables}
+                        onstatuschange={handleAllocationFlowStatusChange}>
+                    </lightning-flow>
+                </div>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- Add Job Detail -->
+    <template lwc:if={showAddJobDetailModal}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="add-job-detail-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_small">
+                <header class="slds-modal__header modal-header">
+                    <div>
+                        <h2 id="add-job-detail-modal-heading" class="slds-text-heading_medium">
+                            Add Job Detail
+                        </h2>
+                        <p class="modal-subtitle">
+                            Select the existing job that this new detail line belongs to.
+                        </p>
+                    </div>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closeAddJobDetailModal}>
+                    </lightning-button-icon>
+                </header>
+
+                <div class="slds-modal__content slds-p-around_medium modal-content job-detail-modal-content">
+                    <lightning-combobox
+                        label="Existing Job"
+                        value={selectedJobNumber}
+                        options={existingJobOptions}
+                        onchange={handleJobDetailSelection}>
+                    </lightning-combobox>
+
+                    <div class="job-detail-note">
+                        The new detail line will inherit the selected job's Loss Component and Payee defaults. These values can still be adjusted before saving.
+                    </div>
+                </div>
+
+                <footer class="slds-modal__footer modal-footer">
+                    <lightning-button label="Cancel" onclick={closeAddJobDetailModal}></lightning-button>
+                    <lightning-button
+                        label="Add Detail"
+                        variant="brand"
+                        icon-name="utility:add"
+                        onclick={confirmAddJobDetail}
+                        disabled={isAddJobDetailConfirmDisabled}>
+                    </lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+
+    <!-- Mass update -->
+    <template lwc:if={showMassUpdateModal}>
+        <section
+            role="dialog"
+            tabindex="-1"
+            aria-modal="true"
+            aria-labelledby="mass-update-modal-heading"
+            class="slds-modal slds-fade-in-open modal-layer">
+            <div class="slds-modal__container modal-container modal-container_medium">
+                <header class="slds-modal__header modal-header">
+                    <div>
+                        <h2 id="mass-update-modal-heading" class="slds-text-heading_medium">
+                            Update Selected Claim Items
+                        </h2>
+                        <p class="modal-subtitle">{selectedCountLabel}</p>
+                    </div>
+                    <lightning-button-icon
+                        icon-name="utility:close"
+                        alternative-text="Close"
+                        title="Close"
+                        variant="bare"
+                        onclick={closeMassUpdateModal}>
+                    </lightning-button-icon>
+                </header>
+
+                <div class="slds-modal__content slds-p-around_medium modal-content mass-update-grid">
+                    <lightning-combobox
+                        label="Status"
+                        value={massStatus}
+                        options={statusOptions}
+                        placeholder="Leave unchanged"
+                        onchange={handleMassStatusChange}>
+                    </lightning-combobox>
+
+                    <lightning-combobox
+                        label="Reason"
+                        value={massReason}
+                        options={reasonOptions}
+                        placeholder="Leave unchanged"
+                        onchange={handleMassReasonChange}>
+                    </lightning-combobox>
+
+                    <lightning-combobox
+                        label="Payee Type"
+                        value={massCategory}
+                        options={categoryOptions}
+                        placeholder="Leave unchanged"
+                        onchange={handleMassCategoryChange}>
+                    </lightning-combobox>
+
+                    <div class="mass-update-note">
+                        Only fields with a selected value will be updated. Click Save Claim Items afterward to commit the changes.
+                    </div>
+                </div>
+
+                <footer class="slds-modal__footer modal-footer">
+                    <lightning-button label="Cancel" onclick={closeMassUpdateModal}></lightning-button>
+                    <lightning-button
+                        label="Apply to Selected Rows"
+                        variant="brand"
+                        onclick={applyMassUpdate}
+                        disabled={isMassUpdateApplyDisabled}>
+                    </lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open modal-backdrop"></div>
+    </template>
+</template>

@@ -1,0 +1,66 @@
+<template>
+
+    <lightning-quick-action-panel
+        header="Rescind Payment"
+    >
+
+        <template if:true={isLoading}>
+
+            <lightning-spinner
+                alternative-text="Cancelling Payment"
+                size="medium"
+            >
+            </lightning-spinner>
+
+        </template>
+
+
+        <div
+            class="slds-p-horizontal_medium
+                   slds-p-vertical_small"
+        >
+
+            <p class="slds-text-body_regular">
+
+                Are you sure you want to cancel this
+                BOK/Mastercard payment?
+
+            </p>
+
+            <p
+                class="slds-m-top_small
+                       slds-text-color_weak"
+            >
+
+                Once Mastercard confirms the cancellation,
+                the payment will be marked as Cancelled.
+
+            </p>
+
+        </div>
+
+
+        <div slot="footer">
+
+            <lightning-button
+                label="Cancel"
+                onclick={handleClose}
+                disabled={isLoading}
+            >
+            </lightning-button>
+
+
+            <lightning-button
+                class="slds-m-left_x-small"
+                variant="destructive"
+                label="Rescind Payment"
+                onclick={handleRescind}
+                disabled={isLoading}
+            >
+            </lightning-button>
+
+        </div>
+
+    </lightning-quick-action-panel>
+
+</template>

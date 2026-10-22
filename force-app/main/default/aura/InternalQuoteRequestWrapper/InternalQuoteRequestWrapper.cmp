@@ -1,0 +1,6 @@
+<aura:component implements="force:appHostable,lightning:isUrlAddressable"
+                access="global">
+
+    <c:internalQuoteRequest />
+
+</aura:component>

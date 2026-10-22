@@ -1,0 +1,161 @@
+<template>
+    <div class="rate-class-builder" style="background-color: white;">
+    <lightning-record-edit-form
+        object-api-name="Report_Request__c"
+        onsuccess={handleSuccess}
+        onerror={errorNavigate}
+    >   
+      
+        <div class="slds-grid">
+            <div class="slds-col slds-size_1-of-2 slds-p-around_x-small">
+                <lightning-input-field field-name="Report_Type__c" onchange={reportTypeChange}></lightning-input-field>
+                <div if:true={isRateImplementationBuilder}>
+                <lightning-combobox
+                    name="picklist"
+                    label="Client"
+                    placeholder="Select a Client"
+                    options={picklistOptions}
+                    onchange={handleClientChange}
+                    required="true">
+                </lightning-combobox>
+                <template if:true={isClientSelected}>
+                    <div class="slds-text-color_error">Please select a Client</div>
+                </template>
+                <lightning-combobox
+                    name="picklist"
+                    label="Product"
+                    placeholder="Select a Product"
+                    options={productPicklist}
+                    onchange={productPicklistChange}
+                    required="true">
+                </lightning-combobox>
+                <template if:true={isProductSelected}>
+                    <div class="slds-text-color_error">Please select a Product</div>
+                </template>
+                <label class="slds-form-element__label">Coverage Levels</label>
+                <div class="slds-input-has-icon slds-input-has-icon_right">
+                    <lightning-icon icon-name="utility:down" size="xx-small" class="slds-icon slds-input__icon"
+                        style="margin-right:-0.2rem;top:15px;"></lightning-icon>
+                    <lightning-input type="text" placeholder= "Select a Coverage Level" value={coverageLevelValue} variant="label-hidden"
+                        onclick={showCoverageLevelLogic}></lightning-input>
+                    <template if:true={showCoverageLevel}>
+                        <div class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid">
+                            <ul class="slds-listbox slds-listbox_vertical">
+                                <li class="slds-listbox__item slds-border_bottom">
+                                    <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                        <span class="slds-media__figure slds-listbox__option-icon">
+                                            <template if:true={selectAllCoverageLevel}>
+                                                <lightning-input type="checkbox" value='SelectAll' checked
+                                                    onchange={onDeselectAll}></lightning-input>
+                                            </template>
+                                            <template if:false={selectAllCoverageLevel}>
+                                                <lightning-input type="checkbox" value='SelectAll'
+                                                    onchange={onSelectAll}></lightning-input>
+                                            </template>
+                                        </span>
+                                        <span class="slds-media__body">
+                                            <span class="slds-truncate" title='Name' style="font-weight:bold">All Coverage Levels</span>
+                                        </span>
+                                    </div>
+                                </li>
+                                <template for:each={coverageLevelPicklist} for:item="option">
+                                    
+                                        <li key={option.index} class="slds-listbox__item">
+                                            <div class="slds-media slds-listbox__option slds-listbox__option_plain slds-media_small">
+                                                <span class="slds-media__figure slds-listbox__option-icon">
+                                                    <template if:true={option.checked}>
+                                                        <lightning-input type="checkbox" value={option.label} checked
+                                                            onchange={onSelect}></lightning-input>
+                                                    </template>
+                                                    <template if:false={option.checked}>
+                                                        <lightning-input type="checkbox" value={option.label} onchange={onSelect}></lightning-input>
+                                                    </template>
+                                                </span>
+                                                <span class="slds-media__body">
+                                                    <span class="slds-truncate" title={option.label}>{option.label}</span>
+                                                </span>
+                                            </div>
+                                        </li>
+                                    
+                                </template>
+                            </ul>
+                        </div>
+                    </template>
+                </div>
+                <template if:true={showInsCarrier}>
+                    <lightning-combobox
+                        name="picklist"
+                        label="Insurance Carrier"
+                        placeholder="Select an Insurance Carrier"
+                        options={insCarriers}
+                        onchange={handleCarrierChange}
+                        required="true">
+                    </lightning-combobox>
+                </template>
+                <template if:true={showState}>
+                    <lightning-combobox
+                        name="picklist"
+                        label="State"
+                        placeholder="Select a State"
+                        options={states}
+                        onchange={handleStateChange}
+                        required="true">
+                    </lightning-combobox>
+                </template>
+            </div>
+            <template if:true={isRefresh}>
+                <div if:true={otherFields}>
+                
+                    <lightning-input-field field-name="Fields__c" required="true" onchange={fieldChange}></lightning-input-field>
+                    <lightning-input-field field-name="Object__c" required="true" ></lightning-input-field>
+                    <lightning-input-field field-name="Filters__c" required="true"></lightning-input-field>
+                    <lightning-input-field field-name="Group_By__c" ></lightning-input-field>
+                    <lightning-input-field field-name="Order_By__c" ></lightning-input-field>
+    
+                    </div>
+            </template>
+                
+            </div>
+            <div class="slds-col slds-size_1-of-2 slds-p-around_x-small">
+                <div if:true={isRateImplementationBuilder}>
+                    <lightning-input-field field-name="Notification_Recipients__c" ></lightning-input-field>
+                    <lightning-input-field field-name="Effective_Date__c" required="true"></lightning-input-field>
+                    <lightning-input-field field-name="Components__c" required="true"></lightning-input-field>
+                </div>
+                <div if:true={otherFields}>
+                    <lightning-input-field field-name="Frequency__c" onchange={frequncyChange} required="true"></lightning-input-field>
+                    <template lwc:if={isWeekly}>
+                        <lightning-input-field field-name="Weekly_Recurrence__c" required="true" ></lightning-input-field>
+                      </template>
+                      <template lwc:if={isMonthly}>
+                        <lightning-input-field field-name="Monthly_Recurrence__c" required="true"></lightning-input-field>
+                        <lightning-input-field field-name="Start_Time__c" required="true"></lightning-input-field>
+                      </template>
+                    <div if:true={dateCheck}>
+                        <lightning-input-field field-name="Start_Date__c" required="true"></lightning-input-field>
+                        <lightning-input-field field-name="End_Date__c" required="true"></lightning-input-field>
+                    </div>
+                    
+                </div>
+            </div>
+            <div style="display:none;">
+                <lightning-input-field  field-name="Client__c" value={selectedClient}></lightning-input-field>
+                <lightning-input-field  field-name="Product__c" value={selectedProduct}></lightning-input-field>
+                <lightning-input-field  field-name="Coverage_Levels__c" value={coverageLevel}></lightning-input-field>
+                <lightning-input-field  field-name="Insurance_Carrier__c" value={selectedCarrier}></lightning-input-field>
+                <lightning-input-field  field-name="State__c" value={selectedState}></lightning-input-field>
+                <lightning-input-field  field-name="Contract_Type__c" value={contractType}></lightning-input-field>
+            </div>
+        </div>
+        <div class="slds-p-around_x-small" style="text-align:center">
+            <template lwc:if={submitButtonVisible}>
+                <lightning-button type="submit" label="Submit" variant="brand"  class= "slds-m-top_medium slds-button_stretch width:550px"
+                onclick={submitAction} >
+            </lightning-button>
+            </template>
+            <lightning-button label="Cancel" variant="brand-outline"  class= "slds-m-top_medium slds-p-left_x-large" onclick={callReportRequestHomePage}>
+            </lightning-button>
+        </div>
+    </lightning-record-edit-form>
+</div>
+</template>

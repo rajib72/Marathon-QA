@@ -1,0 +1,16 @@
+runtime_omnistudio_omniscript-omniscript-edit-block[data-omni-key="ClaimItems"] .slds-editblock_delete.slds-icon_x-small {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+runtime_omnistudio_omniscript-omniscript-edit-block[data-omni-key="ClaimItems"] .slds-size_1-of-12.slds-m-top_medium.slds-grid.slds-grid_align-center .slds-button__icon.slds-icon_xx-small {
+    width: 1.5rem;
+    fill: green;
+    height: 1.5rem;
+}
+runtime_omnistudio_omniscript-omniscript-edit-block[data-omni-key="ClaimItems"] .slds-size_1-of-12.slds-m-top_medium.slds-grid.slds-grid_align-center .slds-m-left_medium .slds-button__icon.slds-icon_xx-small {
+    fill: red;
+}
+runtime_omnistudio_omniscript-omniscript-edit-block[data-omni-key="ClaimItems"] .slds-editblock_inline .slds-size_1-of-12.slds-grid.slds-grid_align-center .slds-m-top_large .slds-icon.slds-button__icon.slds-icon-text-default.slds-icon_xx-small{
+    width: 1.5rem;
+    height: 1.5rem;
+}
