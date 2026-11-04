@@ -10,12 +10,49 @@ import Error_Message from '@salesforce/label/c.Error_Message'
 import No_Location_Found_Error from'@salesforce/label/c.Google_Maps_API_No_Location_Found_Error'
 import { CloseActionScreenEvent } from 'lightning/actions';
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import getServiceCenterAccounts from '@salesforce/apex/GoogleMapsController.getServiceCenterAccounts';
+import getServiceCenterMapAccounts from '@salesforce/apex/GoogleMapsController.getServiceCenterMapAccounts';
 
 //The lwc provides the user with the ability to search for Reapir shop. 
 // On load, the lwc will render default location. If the contract is ‘Auto Warranty’, the default location is the Customers Address. If the contract is ‘Home Warranty’, the default location is the residential address.
 // The user can also search for a location by address by clicking on the search button. 
 // lwc then renders the list of nearby Repair shop and view them as markers on the map. Users then can select from the list or the map markers as the input value of the ‘Repair Shop Account’ field on the Claim and the Repair Shop Account’s Account fields.
 export default class SearchPreferredServiceCenters extends LightningElement {
+    serviceCenterAccounts = [];
+allServiceCenterAccounts = [];
+serviceCenterMapAccounts = [];
+
+showPreferredFacilities = false;
+showKnownFacilities = false;
+allMapMarkers = [];
+
+connectedCallback() {
+    this.loadServiceCenterAccounts();
+    this.loadServiceCenterMapAccounts();
+}
+
+loadServiceCenterMapAccounts() {
+    return getServiceCenterMapAccounts()
+        .then((result) => {
+            this.serviceCenterMapAccounts = result || [];
+
+            console.log(
+                'Service Center Accounts loaded:',
+                this.serviceCenterMapAccounts.length
+            );
+
+            return this.serviceCenterMapAccounts;
+        })
+        .catch((error) => {
+            console.error(
+                'Error loading Service Center map coordinates:',
+                error
+            );
+
+            throw error;
+        });
+}
+
     
     serviceCompany;
     location;
@@ -101,61 +138,193 @@ export default class SearchPreferredServiceCenters extends LightningElement {
     }
 
     // Handles on click handler on Repair shop list and markers
-    handleMarkerSelect(event) {
-        this.selectedServiceCenter = this.mapMarkers.filter(element => {
-            return element.value == event.target.selectedMarkerValue
-        });
-        if(this.selectedServiceCenter[0].title == 'Your Location'){
-            this.selectedServiceCenter = [];
-            this.repairShopName = '';
-            this.street = '';
-            this.city = '';
-            this.state = '';
-            this.postalCode = '';
-            this.country = '';
-            this.phone = '';
-            this.isMarkerSelected = false;
-        }
-        else{
-            this.repairShopName = this.selectedServiceCenter[0].title;
-            this.street = this.selectedServiceCenter[0].location.Street;
-            this.city = this.selectedServiceCenter[0].location.City;
-            this.state = this.selectedServiceCenter[0].location.State;
-            this.postalCode = this.selectedServiceCenter[0].location.PostalCode;
-            this.country = this.selectedServiceCenter[0].location.Country;
-            this.phone = this.selectedServiceCenter[0].phone;
-            this.isMarkerSelected = true;
-        }    
+    
+
+handleMarkerSelect(event) {
+    const selectedMarker = this.mapMarkers.find(element => {
+        return element.value === event.target.selectedMarkerValue;
+    });
+
+    if (!selectedMarker) {
+        return;
     }
 
+    if (selectedMarker.title === 'Your Location') {
+        this.selectedServiceCenter = null;
+        this.repairShopName = '';
+        this.street = '';
+        this.city = '';
+        this.state = '';
+        this.postalCode = '';
+        this.country = '';
+        this.phone = '';
+        this.isMarkerSelected = false;
+        return;
+    }
+
+    this.selectedServiceCenter = selectedMarker;
+
+    this.repairShopName = selectedMarker.title;
+    this.street = selectedMarker.location?.Street || '';
+    this.city = selectedMarker.location?.City || '';
+    this.state = selectedMarker.location?.State || '';
+    this.postalCode = selectedMarker.location?.PostalCode || '';
+    this.country = selectedMarker.location?.Country || '';
+    this.phone = selectedMarker.phone || '';
+    this.isMarkerSelected = true;
+}
+
+
+
     // Handles on click handler on search button. Passes selectedServiceCenter and claimRecordId to create new account and update associated Claim record.
-    handleSaveSelection(){
-        insertAccount({selectedServiceCenter: JSON.stringify(this.selectedServiceCenter), claimRecordId: this.recordId})
+    
+handleSaveSelection() {
+    if (!this.selectedServiceCenter) {
+        this.dispatchEvent(
+            new ShowToastEvent({
+                title: 'Please select a repair shop.',
+                variant: 'error'
+            })
+        );
+        return;
+    }
+
+    insertAccount({
+        selectedServiceCenter: JSON.stringify(this.selectedServiceCenter),
+        claimRecordId: this.recordId
+    })
         .then(result => {
-            if( result == Account_Success){
-                const evt = new ShowToastEvent({
-                    title: Account_Success,
-                    variant: "success",
-                  });
-                  this.dispatchEvent(evt);
+            if (result === Account_Success) {
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title: Account_Success,
+                        variant: 'success'
+                    })
+                );
+
                 setTimeout(() => {
-                    window.location.reload();        
-                }, 5000)                       
+                    window.location.reload();
+                }, 5000);
+            } else {
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title: result || Error_Message,
+                        variant: 'error'
+                    })
+                );
             }
         })
         .catch(error => {
-            var title = Error_Message;
-            if(error.body.message.includes("FIELD_CUSTOM_VALIDATION_EXCEPTION")){       
-                title = error.body.message.split("EXCEPTION,")[1]?.trim();      
-                title = title.replace(/: \[\]$/, "");
+            const message =
+                error?.body?.message ||
+                error?.message ||
+                Error_Message;
+
+            let title = message;
+
+            if (message.includes('FIELD_CUSTOM_VALIDATION_EXCEPTION')) {
+                title = message.split('EXCEPTION,')[1]?.trim() || message;
+                title = title.replace(/: \[\]$/, '');
             }
-            const evt = new ShowToastEvent({
-                title: title,
-                variant: "error",
-              });
-            this.dispatchEvent(evt);
+
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: title,
+                    variant: 'error',
+                    mode: 'sticky'
+                })
+            );
+
+            console.error('Save Selection failed:', error);
         });
-    }
+}
+
+ 
+
+loadServiceCenterAccounts() {
+    getServiceCenterAccounts()
+        .then((result) => {
+            this.allServiceCenterAccounts = (result || []).map(account => ({
+                ...account,
+
+                address: [
+                    account.BillingStreet,
+                    account.BillingCity,
+                    account.BillingState,
+                    account.BillingPostalCode,
+                    account.BillingCountry
+                ].filter(Boolean).join(', '),
+
+                preferredLabel: account.Preferred__c ? 'Yes' : 'No',
+                knownFacilityLabel: account.Known_Facility__c ? 'Yes' : 'No'
+            }));
+
+            this.applyFacilityFilters();
+
+            console.log(
+                'Mapped Service Center Accounts:',
+                JSON.stringify(this.allServiceCenterAccounts)
+            );
+        })
+        .catch((error) => {
+            console.error(
+                'Error loading Service Center Accounts:',
+                error
+            );
+        });
+}
+
+
+
+handlePreferredChange(event) {
+    this.showPreferredFacilities = event.target.checked;
+    this.applyFacilityFilters();
+}
+
+handleKnownChange(event) {
+    this.showKnownFacilities = event.target.checked;
+    this.applyFacilityFilters();
+}
+
+applyFacilityFilters() {
+    const filtersSelected =
+        this.showPreferredFacilities ||
+        this.showKnownFacilities;
+
+    // Filter the Salesforce Service Center list.
+    this.serviceCenterAccounts =
+        (this.allServiceCenterAccounts || []).filter(account => {
+            if (!filtersSelected) {
+                return true;
+            }
+
+            return (
+                (this.showPreferredFacilities &&
+                    account.Preferred__c === true) ||
+                (this.showKnownFacilities &&
+                    account.Known_Facility__c === true)
+            );
+        });
+
+    // Filter Salesforce map markers only.
+    // Preserve Google Places markers and the user's location.
+    this.mapMarkers = (this.allMapMarkers || []).filter(marker => {
+        if (!marker.accountId) {
+            return true;
+        }
+
+        if (!filtersSelected) {
+            return true;
+        }
+
+        return (
+            (this.showPreferredFacilities &&
+                marker.preferred === true) ||
+            (this.showKnownFacilities &&
+                marker.knownFacility === true)
+        );
+    });
+}
 
 
     handleServiceCompanyChange(event) {
@@ -165,7 +334,18 @@ export default class SearchPreferredServiceCenters extends LightningElement {
     const phoneDigits = value.replace(/\D/g, '');
 
     return phoneDigits.length >= 10;
+
 }
+
+normalizePhoneNumber(value) {
+    const digits = (value || '').replace(/\D/g, '');
+
+    // Normalize US phone numbers to their last 10 digits.
+    return digits.length >= 10
+        ? digits.slice(-10)
+        : digits;
+}
+
 
     // method calls the Google Geocoding API  to get the latitude and longitude of the address.
     // Post latitude and longitude retrival, calls Google Nearby API to get nearby service stations and update the map markers.
@@ -188,112 +368,101 @@ export default class SearchPreferredServiceCenters extends LightningElement {
         /*
          * PHONE NUMBER SEARCH
          */
-        if (this.isPhoneNumber(this.serviceCompany)) {
 
-            const phoneSearchResult = await searchServiceCenterByPhone({
-                phoneNumber: this.serviceCompany
-            });
+if (this.isPhoneNumber(this.serviceCompany)) {
+    const phoneSearchResult = await searchServiceCenterByPhone({
+        phoneNumber: this.serviceCompany
+    });
 
-            const phoneSearchData = JSON.parse(phoneSearchResult);
+    const phoneSearchData = JSON.parse(phoneSearchResult);
+    const places = phoneSearchData.places || [];
 
-            if (
-                phoneSearchData.places &&
-                phoneSearchData.places.length > 0
-            ) {
+    const searchedPhone = this.normalizePhoneNumber(
+        this.serviceCompany
+    );
 
-                this.mapMarkers = [];
+    // Accept only facilities with a matching phone number.
+    const matchingPlaces = places.filter(place => {
+        const returnedPhone = this.normalizePhoneNumber(
+            place?.nationalPhoneNumber
+        );
 
-                phoneSearchData.places.forEach(place => {
+        return (
+            searchedPhone.length === 10 &&
+            returnedPhone.length === 10 &&
+            searchedPhone === returnedPhone
+        );
+    });
 
-                    if (
-                        place?.location &&
-                        place?.formattedAddress
-                    ) {
+    // Clear previous results and selected facility details.
+    this.mapMarkers = [];
+    this.selectedServiceCenter = [];
+    this.isMarkerSelected = false;
+    this.repairShopName = '';
+    this.street = '';
+    this.city = '';
+    this.state = '';
+    this.postalCode = '';
+    this.country = '';
+    this.phone = '';
 
-                        this.mapMarkers.push({
-                            location: {
-                                Street:
-                                    place?.postalAddress?.addressLines
-                                        ? place.postalAddress.addressLines.join(', ')
-                                        : '',
-
-                                City:
-                                    place?.postalAddress?.locality || '',
-
-                                State:
-                                    place?.postalAddress?.administrativeArea || '',
-
-                                PostalCode:
-                                    place?.postalAddress?.postalCode || '',
-
-                                Country:
-                                    place.formattedAddress
-                                        ? place.formattedAddress.substring(
-                                            place.formattedAddress.lastIndexOf(',') + 1
-                                        ).trim()
-                                        : '',
-
-                                Latitude:
-                                    place.location.latitude,
-
-                                Longitude:
-                                    place.location.longitude
-                            },
-
-                            value: place.id,
-
-                            title:
-                                place?.displayName?.text || '',
-
-                            description:
-                                place?.shortFormattedAddress || '',
-
-                            id:
-                                place.id,
-
-                            address:
-                                place.formattedAddress,
-
-                            phone:
-                                place?.nationalPhoneNumber || '',
-
-                            website:
-                                place?.websiteUri || ''
-                        });
-
-                    }
-                });
-
-                if (this.mapMarkers.length > 0) {
-
-                    this.center = this.mapMarkers[0];
-
-                    this.accountAddressFound = true;
-
-                } else {
-
-                    this.accountAddressFound = false;
-
-                    const evt = new ShowToastEvent({
-                        title: No_Location_Found_Error,
-                        variant: "error"
-                    });
-
-                    this.dispatchEvent(evt);
-                }
-
-            } else {
-
-                const evt = new ShowToastEvent({
-                    title: No_Location_Found_Error,
-                    variant: "error"
-                });
-
-                this.dispatchEvent(evt);
-            }
-
+    matchingPlaces.forEach(place => {
+        if (!place?.location || !place?.formattedAddress) {
             return;
         }
+
+        this.mapMarkers.push({
+            location: {
+                Street: place?.postalAddress?.addressLines
+                    ? place.postalAddress.addressLines.join(', ')
+                    : '',
+                City: place?.postalAddress?.locality || '',
+                State: place?.postalAddress?.administrativeArea || '',
+                PostalCode: place?.postalAddress?.postalCode || '',
+                Country: place?.postalAddress?.regionCode || 'US',
+                Latitude: place.location.latitude,
+                Longitude: place.location.longitude
+            },
+            value: place.id,
+            title: place?.displayName?.text || '',
+            description: place?.shortFormattedAddress || '',
+            id: place.id,
+            address: place.formattedAddress,
+            phone: place?.nationalPhoneNumber || '',
+            website: place?.websiteUri || ''
+        });
+    });
+
+    if (this.mapMarkers.length > 0) {
+        const selected = this.mapMarkers[0];
+
+        this.center = selected;
+        this.accountAddressFound = true;
+        this.selectedServiceCenter = [selected];
+
+        this.repairShopName = selected.title;
+        this.street = selected.location.Street;
+        this.city = selected.location.City;
+        this.state = selected.location.State;
+        this.postalCode = selected.location.PostalCode;
+        this.country = selected.location.Country;
+        this.phone = selected.phone;
+        this.isMarkerSelected = true;
+    } else {
+        this.accountAddressFound = false;
+        this.selectedServiceCenter = [];
+
+        this.dispatchEvent(
+            new ShowToastEvent({
+                title: No_Location_Found_Error,
+                variant: 'error'
+            })
+        );
+    }
+
+    return;
+}
+
 
         /*
          * EXISTING ADDRESS SEARCH
@@ -321,17 +490,63 @@ export default class SearchPreferredServiceCenters extends LightningElement {
 
             const serviceStationsData =
                 JSON.parse(serviceStationsResult);
-
+  await this.loadServiceCenterMapAccounts();
             this.mapMarkers = [];
+          
 
-            this.createMarkers(
-                location.lat,
-                location.lng,
-                serviceStationsData.places,
-                geocodeData
-            ).forEach(marker => {
-                this.mapMarkers.push(marker);
-            });
+           
+const allMarkers = this.createMarkers(
+    location.lat,
+    location.lng,
+    serviceStationsData.places,
+    geocodeData
+);
+
+console.log(
+    'All markers returned:',
+    JSON.stringify(allMarkers)
+);
+
+console.log(
+    'Salesforce markers returned:',
+    JSON.stringify(
+        allMarkers.filter(
+            marker => marker.value &&
+                marker.value.startsWith('001')
+        )
+    )
+);
+console.log('TEST: Latest JavaScript is running');
+
+this.allMapMarkers = [...allMarkers];
+this.applyFacilityFilters();
+console.log('Total final markers:', this.mapMarkers.length);
+
+console.log(
+    'Final Salesforce Account count:',
+    this.mapMarkers.filter(
+        marker => marker.value &&
+        marker.value.startsWith('001')
+    ).length
+);
+
+console.log(
+    'Final map markers after assignment:',
+    JSON.stringify(this.mapMarkers)
+);
+
+            console.log(
+    'FINAL MAP MARKERS:',
+    JSON.stringify(this.mapMarkers)
+);
+
+console.log(
+    'Salesforce Account IDs in final map:',
+    this.mapMarkers
+        .filter(marker => marker.value && marker.value.startsWith('001'))
+        .map(marker => marker.value)
+);
+
 
             this.accountAddressFound = true;
 
@@ -422,7 +637,53 @@ export default class SearchPreferredServiceCenters extends LightningElement {
             }
         }
         );
-        return [userMarker, ...serviceStationMarkers];
+        console.log(
+    'Accounts available inside createMarkers:',
+    (this.serviceCenterMapAccounts || []).length,
+    JSON.stringify(this.serviceCenterMapAccounts)
+);
+        
+const salesforceMarkers = (this.serviceCenterMapAccounts || [])
+    .filter(account =>
+        account.BillingLatitude != null &&
+        account.BillingLongitude != null
+    )
+    .map(account => ({
+        location: {
+            Street: account.BillingStreet || '',
+            City: account.BillingCity || '',
+            State: account.BillingState || '',
+            PostalCode: account.BillingPostalCode || '',
+            Country: account.BillingCountry || '',
+            Latitude: Number(account.BillingLatitude),
+            Longitude: Number(account.BillingLongitude)
+        },
+        title: account.Name,
+        description: [
+    account.Phone ? `Phone: ${account.Phone}` : '',
+    account.email ? `Email: ${account.email}` : '',
+    account.laborRate != null
+        ? `Labor Rate: ${account.laborRate}`
+        : ''
+].filter(Boolean).join(' | '),
+      value: account.Id,
+id: account.Id,
+accountId: account.Id,
+preferred: account.preferred,
+knownFacility: account.knownFacility
+    }));
+
+console.log(
+    'Salesforce map markers:',
+    JSON.stringify(salesforceMarkers)
+);
+
+return [
+    userMarker,
+    ...serviceStationMarkers,
+    ...salesforceMarkers
+];
+
     }
 
     get mapMarkersHasElements(){

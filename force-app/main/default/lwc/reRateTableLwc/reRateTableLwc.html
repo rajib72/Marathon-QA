@@ -1,0 +1,67 @@
+<template>
+    <div class="slds-p-Vertical_x-small">
+        <!-- 1. Coverage Level -->
+        <lightning-combobox
+            name="coverageLevel"
+            label="Coverage Level"
+            value={selectedCoverageId}
+            options={coverageOptions}
+            onchange={handleCoverageChange}
+            placeholder="Select Coverage Level">
+        </lightning-combobox>
+
+        <!-- 2. Sale Odometer (Shown for Auto contracts) -->
+        <template if:true={isAutoProduct}>
+            <lightning-input
+                type="number"
+                name="saleMileage"
+                label="Sale Odometer"
+                value={saleMileage}
+                onchange={handleMileageChange}
+                class="slds-m-top_small">
+            </lightning-input>
+        </template>
+
+        <!-- Eligibility Warning if Odometer/Age has 0 matching matrix rows -->
+        <template if:true={noMatchingRowsWarning}>
+            <div class="slds-text-color_error slds-m-top_xx-small slds-text-body_small">
+                No eligible rate rows found in the matrix for this Coverage Level, Sale Odometer, Vehicle Age, and Rate Class.
+            </div>
+        </template>
+
+        <!-- 3. Contract Term Months -->
+        <template if:true={isAutoProduct}>
+            <lightning-combobox
+                name="termMonths"
+                label="Contract Term Months"
+                value={selectedMonths}
+                options={monthOptions}
+                onchange={handleMonthChange}
+                placeholder="Select Contract Term Months"
+                class="slds-m-top_small">
+            </lightning-combobox>
+
+            <!-- 4. Contract Term Miles (Dependent on Term Months) -->
+            <lightning-combobox
+                name="termMiles"
+                label="Contract Term Miles"
+                value={selectedMiles}
+                options={mileOptions}
+                onchange={handleMileChange}
+                placeholder="Select Contract Term Miles"
+                class="slds-m-top_small">
+            </lightning-combobox>
+        </template>
+
+        <!-- 5. Deductible (Dependent on Term Months + Term Miles) -->
+        <lightning-combobox
+            name="deductible"
+            label="Deductible"
+            value={selectedDeductible}
+            options={deductibleOptions}
+            onchange={handleDeductibleChange}
+            placeholder="Select Deductible"
+            class="slds-m-top_small">
+        </lightning-combobox>
+    </div>
+</template>

@@ -8,6 +8,96 @@
                 <lightning-button label="Search" class="search_nearBy_button" icon-name="utility:search"  onclick={handleSearch}></lightning-button>
             </div>        
         </div>
+        <!-- Salesforce Service Centers -->
+         
+        <!-- Facility Type Filters -->
+        <div class="slds-p-around_x-small">
+            <lightning-card title="Facility Type">
+                <div class="slds-p-horizontal_small">
+                    <lightning-input
+                        type="checkbox"
+                        label="Preferred Facilities"
+                        checked={showPreferredFacilities}
+                        onchange={handlePreferredChange}>
+                    </lightning-input>
+
+                    <lightning-input
+                        type="checkbox"
+                        label="Known Facilities"
+                        checked={showKnownFacilities}
+                        onchange={handleKnownChange}>
+                    </lightning-input>
+                </div>
+            </lightning-card>
+        </div>
+
+<div class="slds-p-around_x-small">
+    <lightning-card title="Salesforce Service Centers"
+                    icon-name="standard:account">
+
+        <template lwc:if={serviceCenterAccounts.length}>
+            <div class="slds-p-around_small">
+                <template
+                    for:each={serviceCenterAccounts}
+                    for:item="account">
+
+                    <div key={account.Id}
+                         class="slds-box slds-m-bottom_small">
+
+                        <p>
+                            <strong>{account.Name}</strong>
+                        </p>
+
+                        <p>{account.address}</p>
+
+                        <p>
+                            <strong>Phone:</strong>
+                            {account.Phone}
+                        </p>
+
+                        <p>
+                            <strong>Email:</strong>
+                            {account.Email__c}
+                        </p>
+
+                        <p>
+                            <strong>Fax:</strong>
+                            {account.Repair_Fax__c}
+                        </p>
+
+                        <p>
+                            <strong>Labor Rate:</strong>
+                            <lightning-formatted-number
+                                value={account.Labor_Rate__c}
+                                format-style="currency">
+                            </lightning-formatted-number>
+                        </p>
+
+                      <p>
+    <strong>Preferred:</strong>
+    {account.preferredLabel}
+</p>
+
+<p>
+    <strong>Known Facility:</strong>
+    {account.knownFacilityLabel}
+</p>
+
+                       
+
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <template lwc:else>
+            <p class="slds-p-around_small">
+                No Salesforce Service Centers found.
+            </p>
+        </template>
+
+    </lightning-card>
+</div>
         <div if:true={isMarkerSelected}>
             <lightning-card  icon-name="standard:account" title="Selected Service Center">
                 <h3 slot="title">Selected Service Center</h3>
@@ -62,10 +152,10 @@
 
         </div>   
          
-        <div if:false={accountAddressFound}>
-                <lightning-card title="Preferred Service Center">
-                    <p>No Address Found</p>"
-            </lightning-card>
-        </div>
+       <div if:false={accountAddressFound}>
+    <lightning-card title="Preferred Service Center">
+        <p>No Address Found</p>
+    </lightning-card>
+</div>
     </div>
 </template>

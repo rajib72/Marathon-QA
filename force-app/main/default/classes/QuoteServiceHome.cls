@@ -48,7 +48,7 @@ if (clientConfig == null) {
     response.responseBody = Blob.valueOf(responseStr);
     return;
 }
-             validateClientConfig(clientConfig);
+            
             // Clear previous transaction/test data
 responseMap.clear();
 responseMapList.clear();
@@ -93,21 +93,26 @@ if(!Test.isRunningTest()) {
                     for(Map<String,String> rateRow : responseMapList.get(key)){
                         
                         
-                        String termMonths = rateRow.get('TermMonths');
                         
-                        // Skip 12-month quotes for Endurance and Reliant Home Warranty
-// Skip 12-month quotes when disabled for the configured client
+String termMonths = rateRow.get('TermMonths');
+String productName = responseMap.get(key).get('Product');
+
 if (
     !clientConfig.Allow_12_Month_Quotes__c &&
-    termMonths == '12'
+    termMonths == '12' &&
+    (productName == null ||
+     !productName.toUpperCase().contains('M2M'))
 ) {
     System.debug(
         'Skipping 12-month quote for client = '
         + req.Client
+        + ', Product = '
+        + productName
     );
 
     continue;
 }
+
                         
                         // Set contract term based on M2M configuration or client default term.
                         
@@ -294,9 +299,11 @@ q.ValidationDays =
             }
             
             // 2. NEW CHECK: If the user passed bad inputs (like "Single Familys"), quotes will be empty!
-            if(quotes.isEmpty()){
-                throw new HWValidationException('Null value received for required field');
-            }
+            if (quotes.isEmpty()) {
+    throw new HWValidationException(
+        'No quotes found for the supplied criteria.'
+    );
+}
             
             res.quotes = quotes;
             System.debug('============= FINAL QUOTES =============');
@@ -327,6 +334,120 @@ q.ValidationDays =
             response.responseBody = Blob.valueOf(responseStr);
         }
     }
+
+    //Added by Joyita Sarkar 22.10.26
+    // ============================================================
+// INTERNAL QUOTE RETRIEVAL FOR LWC
+// Add immediately after processQuoteRequest()
+// and before setup()
+// ============================================================
+public static List<HWQuote> getQuotesForInternalRequest(
+    String client,
+    String state,
+    String residenceType,
+    String product,
+    List<String> options
+) {
+    if (String.isBlank(client) ||
+        String.isBlank(state) ||
+        String.isBlank(residenceType)) {
+        throw new AuraHandledException(
+            'Client, State, and Residence Type are required.'
+        );
+    }
+
+    RestRequest previousRequest = RestContext.request;
+    RestResponse previousResponse = RestContext.response;
+
+    try {
+        // Prepare an internal request using the existing REST contract.
+        HWRequest requestData = new HWRequest();
+        requestData.Client = client;
+        requestData.OriginalState = state;
+        requestData.ResidenceType = residenceType;
+
+        RestRequest internalRequest = new RestRequest();
+        internalRequest.requestUri = '/services/apexrest/QuoteRequestServiceHome/';
+        internalRequest.httpMethod = 'POST';
+        internalRequest.addHeader('Content-Type', 'application/json');
+        internalRequest.requestBody = Blob.valueOf(
+            JSON.serialize(requestData)
+        );
+
+        RestResponse internalResponse = new RestResponse();
+
+        RestContext.request = internalRequest;
+        RestContext.response = internalResponse;
+
+        // Reuse the existing Home Warranty quote calculation.
+        processQuoteRequest();
+
+        if (internalResponse.responseBody == null) {
+            throw new AuraHandledException(
+                'Home Warranty quote service returned an empty response.'
+            );
+        }
+
+        HWResponse responseData = (HWResponse) JSON.deserialize(
+            internalResponse.responseBody.toString(),
+            HWResponse.class
+        );
+
+        if (responseData == null ||
+            responseData.quotes == null ||
+            responseData.quotes.isEmpty()) {
+            String errorMessage =
+                responseData != null &&
+                String.isNotBlank(responseData.error)
+                ? responseData.error
+                : 'No Home Warranty quotes were returned.';
+
+            throw new AuraHandledException(errorMessage);
+        }
+
+        // Return all calculated quotes if no product filter is supplied.
+        List<HWQuote> filteredQuotes = new List<HWQuote>();
+
+        for (HWQuote quote : responseData.quotes) {
+            if (quote == null) {
+                continue;
+            }
+
+            if (String.isBlank(product) ||
+                (quote.Product != null &&
+                 quote.Product.equalsIgnoreCase(product))) {
+                filteredQuotes.add(quote);
+            }
+        }
+
+        if (filteredQuotes.isEmpty()) {
+            throw new AuraHandledException(
+                'No Home Warranty quotes were found for product: ' +
+                product
+            );
+        }
+
+        return filteredQuotes;
+
+    } catch (AuraHandledException e) {
+        throw e;
+    } catch (Exception e) {
+        System.debug(
+            LoggingLevel.ERROR,
+            'Internal Home Warranty quote error: ' +
+            e.getMessage() + '\n' + e.getStackTraceString()
+        );
+
+        throw new AuraHandledException(
+            'Unable to retrieve Home Warranty quotes. ' +
+            e.getMessage()
+        );
+    } finally {
+        // Restore the caller's REST context.
+        RestContext.request = previousRequest;
+        RestContext.response = previousResponse;
+    }
+}
     
 public static void setup(
     HWRequest req,
@@ -359,8 +480,8 @@ public static void setup(
         allocationCostLookup(req.Client);
     }
 }
-    private static Quote_Client_Config__mdt getClientConfig(String clientName) {
-
+    
+private static Quote_Client_Config__mdt getClientConfig(String clientName) {
     if (String.isBlank(clientName)) {
         return null;
     }
@@ -368,50 +489,22 @@ public static void setup(
     for (Quote_Client_Config__mdt config :
          Quote_Client_Config__mdt.getAll().values()) {
 
+        System.debug('Requested Client Name: [' + clientName + ']');
+        System.debug('Metadata Developer Name: ' + config.DeveloperName);
+        System.debug('Metadata Client Name: [' + config.Client_Name__c + ']');
+        System.debug('Metadata Active: ' + config.Active__c);
+
         if (config.Active__c &&
             String.isNotBlank(config.Client_Name__c) &&
             config.Client_Name__c.equalsIgnoreCase(clientName)) {
-
             return config;
         }
     }
 
     return null;
 }
-    private static void validateClientConfig(
-    Quote_Client_Config__mdt config
-){
 
-    if(config == null){
-        throw new HWValidationException(
-            'Client configuration not found.'
-        );
-    }
-
-    if(!config.Active__c){
-        throw new HWValidationException(
-            'Client configuration is inactive.'
-        );
-    }
-
-    if(String.isBlank(config.Dealer_Lookup_Matrix__c)){
-        throw new HWValidationException(
-            'Dealer Lookup Matrix is not configured for client.'
-        );
-    }
-
-    if(String.isBlank(config.Coverage_Matrix__c)){
-        throw new HWValidationException(
-            'Coverage Matrix is not configured for client.'
-        );
-    }
-
-    if(String.isBlank(config.State_Matrix__c)){
-        throw new HWValidationException(
-            'State Matrix is not configured for client.'
-        );
-    }
-}
+ 
     
     
     // DEALER LOOKUP
@@ -433,12 +526,15 @@ public static void dealerCodeLookup(
         WHERE UniqueName = :dealerLookupMatrixName
     ];
 
-    if(
-        dealerLookupRec.isEmpty() ||
-        dealerLookupRec[0].CalculationMatrixVersions.isEmpty()
-    ) {
-        return;
-    }
+    if (
+    dealerLookupRec.isEmpty() ||
+    dealerLookupRec[0].CalculationMatrixVersions.isEmpty()
+) {
+    throw new HWValidationException(
+        'Dealer Lookup Matrix is missing or has no active version: '
+        + dealerLookupMatrixName
+    );
+}
 
     String responseBody =
         ContractUtility.fetchLookupTableRows(
@@ -460,7 +556,13 @@ public static void dealerCodeLookup(
         Map<String, Object> rowData =
             (Map<String, Object>) row.get('rowData');
 
-        if(String.valueOf(rowData.get('Client')) == client){
+       String matrixClient = rowData.get('Client') == null
+    ? ''
+    : String.valueOf(rowData.get('Client')).trim();
+
+if (matrixClient.equalsIgnoreCase(
+    client == null ? '' : client.trim()
+)) {
 
             String dealerId =
                 String.valueOf(rowData.get('DealerProgramId'));
@@ -772,8 +874,15 @@ System.debug('==============================');
                     Map<String,Object> input = (Map<String,Object>)JSON.deserializeUntyped(row.InputData);
                     Map<String,Object> output = (Map<String,Object>)JSON.deserializeUntyped(row.OutputData);
                     
-                    String inputCoverage = String.valueOf(input.get('CoverageName')).trim();
-                    String inputRes = String.valueOf(input.get('ResidenceType')).replace(' ','').toLowerCase();
+String inputCoverage = input.get('CoverageName') == null
+    ? ''
+    : String.valueOf(input.get('CoverageName')).trim();
+
+String inputRes = input.get('ResidenceType') == null
+    ? ''
+    : String.valueOf(input.get('ResidenceType'))
+        .replace(' ', '')
+        .toLowerCase();
                     String reqCoverage = coverage != null ? coverage.trim() : '';
                     String reqRes = residence != null ? residence.replace(' ','').toLowerCase() : '';
                     
@@ -823,7 +932,15 @@ System.debug('==============================');
 WHERE UniqueName = :coverageMatrixName
         ];
         
-        if(coverageRec.isEmpty() || coverageRec[0].CalculationMatrixVersions.isEmpty()) return;
+        if (
+    coverageRec.isEmpty() ||
+    coverageRec[0].CalculationMatrixVersions.isEmpty()
+) {
+    throw new HWValidationException(
+        'Coverage Matrix is missing or has no active version: '
+        + coverageMatrixName
+    );
+}
         String responseBody = ContractUtility.fetchLookupTableRows(coverageRec[0].Id, coverageRec[0].CalculationMatrixVersions[0].Id);
     System.debug(
     '===== RAW OPTION MATRIX RESPONSE ====='
@@ -983,15 +1100,7 @@ System.debug(
                         continue;
                     }
                     
-                    if(!carrierMatched){
-                        
-                        System.debug(
-                            'Skipped Carrier -> ' +
-                            code.Descriptor__c
-                        );
-                        
-                        continue;
-                    }
+                
                     
                     String amount = String.valueOf(code.Allocation_Amount__c);
                     
@@ -1305,15 +1414,15 @@ gen.writeEndObject();
             
             gen.writeStringField('CoverageLevel', q.CoverageLevel);
             
-            gen.writeNumberField('ContractTermMonths', q.ContractTermMonths);
+            gen.writeStringField('ContractTermMonths', String.valueOf(q.ContractTermMonths));
             
-            gen.writeNumberField('ValidationDays', q.ValidationDays);
+            gen.writeStringField('ValidationDays', String.valueOf(q.ValidationDays));
             
-            gen.writeNumberField('Deductible', q.Deductible);
+            gen.writeStringField('Deductible', q.Deductible == null ? '' : q.Deductible.setScale(2).toPlainString());
             
-            gen.writeNumberField('DealerCost', q.DealerCost);
+           gen.writeStringField('DealerCost', q.DealerCost == null ? '' : q.DealerCost.setScale(2).toPlainString());
             
-            gen.writeNumberField('MonthlyDealerCost', q.MonthlyDealerCost);
+           gen.writeStringField('MonthlyDealerCost', q.MonthlyDealerCost == null ? '' : q.MonthlyDealerCost.setScale(2).toPlainString());
             
             gen.writeStringField('WaterWellPump', q.WaterWellPump);
             

@@ -85,7 +85,7 @@ public with sharing class InternalQuoteRequestController {
     // ============================================================
     // GET CLIENTS
     // ============================================================
-
+/*
     @AuraEnabled(cacheable=true)
     public static List<DropdownOption> getClients() {
 
@@ -120,98 +120,77 @@ public with sharing class InternalQuoteRequestController {
         results.sort(new DropdownOptionComparator());
 
         return results;
+    }*/
+
+
+@AuraEnabled(cacheable=true)
+public static List<DropdownOption> getClients(String quoteType) {
+    List<DropdownOption> results = new List<DropdownOption>();
+
+    if (String.isBlank(quoteType)) {
+        return results;
     }
 
+    String businessLine;
 
+    if (quoteType.equalsIgnoreCase('Auto')) {
+        businessLine = 'Auto';
+    } else if (quoteType.equalsIgnoreCase('Home') || quoteType.equalsIgnoreCase('HomeWarranty')) {
+        businessLine = 'Home';
+    } else {
+        return results;
+    }
+
+    for (Account acc : [
+        SELECT Id, Name
+        FROM Account
+        WHERE RecordType.Name = 'Selling Agency'
+          AND Active__c = 'Yes'
+          AND Business_Line__c = :businessLine
+        ORDER BY Name
+    ]) {
+        if (String.isNotBlank(acc.Name)) {
+            results.add(new DropdownOption(acc.Name, acc.Name));
+        }
+    }
+
+    return results;
+}
     // ============================================================
     // GET PRODUCTS
     // ============================================================
-
 @AuraEnabled(cacheable=true)
 public static List<DropdownOption> getProducts(String client) {
-
     List<DropdownOption> results = new List<DropdownOption>();
-    Set<String> products = new Set<String>();
 
     if (String.isBlank(client)) {
         return results;
     }
 
-    Quote_Client_Config__mdt clientConfig = getClientConfig(client);
-
-    if (clientConfig == null ||
-        String.isBlank(clientConfig.Dealer_Lookup_Matrix__c)) {
-        return results;
-    }
-
-    List<CalculationMatrix> matrices = [
-        SELECT Id
-        FROM CalculationMatrix
-        WHERE UniqueName = :clientConfig.Dealer_Lookup_Matrix__c
-        LIMIT 1
-    ];
-
-    if (matrices.isEmpty()) {
-        return results;
-    }
-
-    List<CalculationMatrixVersion> versions = [
-        SELECT Id
-        FROM CalculationMatrixVersion
-        WHERE CalculationMatrixId = :matrices[0].Id
-          AND IsEnabled = true
-        ORDER BY CreatedDate DESC
-        LIMIT 1
-    ];
-
-    if (versions.isEmpty()) {
-        return results;
-    }
-
-    List<CalculationMatrixRow> rows = [
-        SELECT Id, InputData, OutputData
-        FROM CalculationMatrixRow
-        WHERE CalculationMatrixVersionId = :versions[0].Id
-    ];
+    List<CalculationMatrixRow> rows =
+        getDealerLookupRows('Dealer_Code_Lookup');
 
     for (CalculationMatrixRow row : rows) {
-
-        Map<String, Object> inputData = parseJson(row.InputData);
-        Map<String, Object> outputData = parseJson(row.OutputData);
-
-        // Check Client in OutputData first, then InputData.
-        String rowClient = getStringValue(outputData, 'Client');
-
-        if (String.isBlank(rowClient)) {
-            rowClient = getStringValue(inputData, 'Client');
-        }
-
-        if (String.isBlank(rowClient) ||
-            !rowClient.trim().equalsIgnoreCase(client.trim())) {
+        if (String.isBlank(row.OutputData)) {
             continue;
         }
 
-        // Check Product in OutputData first, then InputData.
+        Map<String, Object> outputData = parseJson(row.OutputData);
+
+        String rowClient = getStringValue(outputData, 'Client');
         String product = getStringValue(outputData, 'Product');
 
-        if (String.isBlank(product)) {
-            product = getStringValue(inputData, 'Product');
-        }
-
-        if (String.isNotBlank(product)) {
-            products.add(product.trim());
+        if (
+            String.isNotBlank(rowClient) &&
+            rowClient.equalsIgnoreCase(client) &&
+            String.isNotBlank(product)
+        ) {
+            results.add(new DropdownOption(product, product));
         }
     }
 
-    for (String product : products) {
-        results.add(new DropdownOption(product, product));
-    }
-
-    results.sort(new DropdownOptionComparator());
-
-    return results;
+    return removeDuplicateOptions(results);
 }
-
     // ============================================================
     // GET OPTIONS
     // ============================================================
@@ -301,7 +280,6 @@ public static List<DropdownOption> getOptions(
     return results;
 }*/
 
-
 @AuraEnabled(cacheable=true)
 public static List<DropdownOption> getOptions(
     String client,
@@ -313,22 +291,15 @@ public static List<DropdownOption> getOptions(
         return results;
     }
 
-    // 1. Get the active client configuration.
-    Quote_Client_Config__mdt config = getClientConfig(client);
+    // 1. Always read the shared Dealer_Code_Lookup matrix directly.
+    List<CalculationMatrixRow> dealerRows =
+        getDealerLookupRows('Dealer_Code_Lookup');
 
-    if (config == null ||
-        String.isBlank(config.Dealer_Lookup_Matrix__c)) {
+    if (dealerRows.isEmpty()) {
         return results;
     }
 
-    // 2. Read the Dealer Code Lookup matrix rows.
-    List<CalculationMatrixRow> dealerRows =
-        getDealerLookupRows(config.Dealer_Lookup_Matrix__c);
-
-    // Prevent processing the same options matrix more than once.
-    Set<String> processedMatrixNames = new Set<String>();
-
-    // 3. Read the Decision Matrix Mapping metadata.
+    // 2. Index the mapping metadata by OptionSets + CoverageLevel.
     Map<String, DecisionMatrixMapping__mdt> mappingsByKey =
         new Map<String, DecisionMatrixMapping__mdt>();
 
@@ -350,21 +321,19 @@ public static List<DropdownOption> getOptions(
         mappingsByKey.put(mappingKey, mapping);
     }
 
-    // 4. Match the Client and Product in Dealer Code Lookup.
-    for (CalculationMatrixRow row : dealerRows) {
+    // 3. Match the selected Client and Product in Dealer_Code_Lookup.
+    Set<String> processedMatrixNames = new Set<String>();
 
+    for (CalculationMatrixRow row : dealerRows) {
         Map<String, Object> inputData = parseJson(row.InputData);
         Map<String, Object> outputData = parseJson(row.OutputData);
 
-        // Check OutputData first, then InputData.
         String rowClient = getStringValue(outputData, 'Client');
-
         if (String.isBlank(rowClient)) {
             rowClient = getStringValue(inputData, 'Client');
         }
 
         String rowProduct = getStringValue(outputData, 'Product');
-
         if (String.isBlank(rowProduct)) {
             rowProduct = getStringValue(inputData, 'Product');
         }
@@ -376,16 +345,14 @@ public static List<DropdownOption> getOptions(
             continue;
         }
 
-        // 5. Extract OptionSets and CoverageLevel.
+        // 4. Read OptionSets and CoverageLevel from the matching row.
         String optionSets = getStringValue(outputData, 'OptionSets');
-
         if (String.isBlank(optionSets)) {
             optionSets = getStringValue(inputData, 'OptionSets');
         }
 
         String coverageLevel =
             getStringValue(outputData, 'CoverageLevel');
-
         if (String.isBlank(coverageLevel)) {
             coverageLevel =
                 getStringValue(inputData, 'CoverageLevel');
@@ -396,7 +363,7 @@ public static List<DropdownOption> getOptions(
             continue;
         }
 
-        // 6. Resolve the actual options matrix.
+        // 5. Resolve the options matrix using DecisionMatrixMapping__mdt.
         String mappingKey =
             optionSets.trim().toLowerCase() +
             '|' +
@@ -421,16 +388,17 @@ public static List<DropdownOption> getOptions(
 
         processedMatrixNames.add(matrixKey);
 
-        // 7. Read OptionName from the resolved options matrix.
-        addOptionsFromMatrix(optionsMatrixName, results);
+        // 6. Retrieve options for this coverage level.
+        addOptionsFromMatrix(
+            optionsMatrixName,
+            coverageLevel,
+            results
+        );
     }
 
-    // 8. Remove blank and duplicate values, then sort.
+    // 7. Remove blanks/duplicates and sort the final dropdown.
     return removeDuplicateOptions(results);
 }
-
-
-
     // ============================================================
     // GET QUOTES
     // ============================================================
@@ -445,65 +413,280 @@ public static List<DropdownOption> getOptions(
      * Once the correct ResidenceType source is confirmed, this method
      * will call the existing quote calculation logic.
      */
+/*
+@AuraEnabled
+public static List<QuoteResultWrapper> getQuotes(
+    String quoteType,
+    String client,
+    String product,
+    String saleOdometer,
+    String state,
+    String vin,
+    List<String> options,
+    String residenceType
+) {
+    // Common validations
+    if (String.isBlank(quoteType)) {
+        throw new AuraHandledException('Quote Type is required.');
+    }
 
-    @AuraEnabled
-    public static List<QuoteResultWrapper> getQuotes(
-        String client,
-        String product,
-        String saleOdometer,
-        String state,
-        String vin,
-        List<String> options
-    ) {
+    if (String.isBlank(client)) {
+        throw new AuraHandledException('Client is required.');
+    }
 
-        if (String.isBlank(client)) {
-            throw new AuraHandledException(
-                'Client is required.'
-            );
-        }
+    if (String.isBlank(product)) {
+        throw new AuraHandledException('Product is required.');
+    }
 
-        if (String.isBlank(product)) {
-            throw new AuraHandledException(
-                'Product is required.'
-            );
-        }
+    if (String.isBlank(state)) {
+        throw new AuraHandledException('State is required.');
+    }
 
+    // ============================================================
+    // AUTO QUOTES
+    // Keep the existing Auto behavior unchanged
+    // ============================================================
+    if (quoteType.equalsIgnoreCase('Auto')) {
         if (String.isBlank(saleOdometer)) {
             throw new AuraHandledException(
-                'Sale Odometer is required.'
-            );
-        }
-
-        if (String.isBlank(state)) {
-            throw new AuraHandledException(
-                'State is required.'
+                'Sale Odometer is required for Auto quotes.'
             );
         }
 
         if (String.isBlank(vin)) {
             throw new AuraHandledException(
-                'VIN is required.'
+                'VIN is required for Auto quotes.'
             );
         }
 
-        /*
-         * IMPORTANT:
-         *
-         * Do not hard-code ResidenceType here.
-         *
-         * QuoteServiceHome.rateCostLookupHW() uses ResidenceType
-         * to identify the correct rate row.
-         *
-         * We will connect this method to the existing Endurance
-         * ResidenceType logic once that source is identified.
-         */
-
         throw new AuraHandledException(
-            'Quote retrieval is not connected yet. ' +
-            'Residence Type mapping from the existing Endurance ' +
-            'quote flow is required before retrieving quotes.'
+            'Auto quote calculation has not been connected yet.'
         );
     }
+
+    // ============================================================
+    // HOME WARRANTY QUOTES
+    // ============================================================
+    if (
+        quoteType.equalsIgnoreCase('Home Warranty') ||
+        quoteType.equalsIgnoreCase('HomeWarranty')
+    ) {
+        if (String.isBlank(residenceType)) {
+            throw new AuraHandledException(
+                'Residence Type is required for Home Warranty quotes.'
+            );
+        }
+
+        try {
+            // Retrieve calculated Home Warranty quotes from the service.
+            List<QuoteServiceHome.HWQuote> homeQuotes =
+                QuoteServiceHome.getQuotesForInternalRequest(
+                    client,
+                    state,
+                    residenceType,
+                    product,
+                    options
+                );
+
+            // Convert the service response into the LWC wrapper.
+            List<QuoteResultWrapper> results =
+                new List<QuoteResultWrapper>();
+
+            if (homeQuotes == null || homeQuotes.isEmpty()) {
+                return results;
+            }
+
+            for (QuoteServiceHome.HWQuote homeQuote : homeQuotes) {
+                if (homeQuote == null) {
+                    continue;
+                }
+
+                QuoteResultWrapper result = new QuoteResultWrapper();
+
+                result.dealerProgramId = homeQuote.DealerProgramId;
+                result.product = homeQuote.Product;
+                result.coverageLevel = homeQuote.CoverageLevel;
+                result.contractTermMonths = homeQuote.ContractTermMonths;
+                result.validationDays = homeQuote.ValidationDays;
+                result.deductible = homeQuote.Deductible;
+                result.dealerCost = homeQuote.DealerCost;
+                result.monthlyDealerCost = homeQuote.MonthlyDealerCost;
+
+                result.waterWellPump = homeQuote.WaterWellPump;
+                result.refrigeratorIceMaker = homeQuote.RefrigeratorIceMaker;
+                result.standAloneIceMaker = homeQuote.StandAloneIceMaker;
+                result.secondaryRefrigerator = homeQuote.SecondaryRefrigerator;
+                result.secondaryFreezer = homeQuote.SecondaryFreezer;
+                result.swimmingPool = homeQuote.SwimmingPool;
+                result.spa = homeQuote.Spa;
+                result.clothesWasherDryer = homeQuote.ClothesWasherDryer;
+                result.centralVac = homeQuote.CentralVac;
+                result.garageDoorOpener = homeQuote.GarageDoorOpener;
+
+                results.add(result);
+            }
+
+            return results;
+
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (Exception e) {
+            System.debug(
+                LoggingLevel.ERROR,
+                'Home Warranty quote retrieval failed: ' +
+                e.getMessage() + '\n' + e.getStackTraceString()
+            );
+
+            throw new AuraHandledException(
+                'Unable to retrieve Home Warranty quotes. ' +
+                'Please contact your Salesforce administrator.'
+            );
+        }
+    }
+
+    // ============================================================
+    // UNSUPPORTED QUOTE TYPE
+    // ============================================================
+    throw new AuraHandledException(
+        'Unsupported Quote Type: ' + quoteType
+    );
+}*/
+
+
+
+@AuraEnabled
+public static List<QuoteResultWrapper> getQuotes(
+    String quoteType,
+    String client,
+    String product,
+    String saleOdometer,
+    String state,
+    String vin,
+    List<String> options,
+    String residenceType
+) {
+    // Common validations
+    if (String.isBlank(quoteType)) {
+        throw new AuraHandledException('Quote Type is required.');
+    }
+
+    if (String.isBlank(client)) {
+        throw new AuraHandledException('Client is required.');
+    }
+
+    if (String.isBlank(product)) {
+        throw new AuraHandledException('Product is required.');
+    }
+
+    if (String.isBlank(state)) {
+        throw new AuraHandledException('State is required.');
+    }
+
+    // ============================================================
+    // AUTO QUOTES
+    // Keep the existing Auto behavior unchanged
+    // ============================================================
+    if (quoteType.equalsIgnoreCase('Auto')) {
+        if (String.isBlank(saleOdometer)) {
+            throw new AuraHandledException(
+                'Sale Odometer is required for Auto quotes.'
+            );
+        }
+
+        if (String.isBlank(vin)) {
+            throw new AuraHandledException(
+                'VIN is required for Auto quotes.'
+            );
+        }
+
+        throw new AuraHandledException(
+            'Auto quote calculation has not been connected yet.'
+        );
+    }
+
+    // ============================================================
+    // HOME WARRANTY QUOTES
+    // Residence Type is optional
+    // ============================================================
+    if (
+        quoteType.equalsIgnoreCase('Home') ||
+        quoteType.equalsIgnoreCase('HomeWarranty')
+    ) {
+        try {
+            // Retrieve Home Warranty quotes.
+            // Residence Type may be null or blank.
+            List<QuoteServiceHome.HWQuote> homeQuotes =
+                QuoteServiceHome.getQuotesForInternalRequest(
+                    client,
+                    state,
+                    residenceType,
+                    product,
+                    options
+                );
+
+            List<QuoteResultWrapper> results =
+                new List<QuoteResultWrapper>();
+
+            if (homeQuotes == null || homeQuotes.isEmpty()) {
+                return results;
+            }
+
+            for (QuoteServiceHome.HWQuote homeQuote : homeQuotes) {
+                if (homeQuote == null) {
+                    continue;
+                }
+
+                QuoteResultWrapper result = new QuoteResultWrapper();
+
+                result.dealerProgramId = homeQuote.DealerProgramId;
+                result.product = homeQuote.Product;
+                result.coverageLevel = homeQuote.CoverageLevel;
+                result.contractTermMonths = homeQuote.ContractTermMonths;
+                result.validationDays = homeQuote.ValidationDays;
+                result.deductible = homeQuote.Deductible;
+                result.dealerCost = homeQuote.DealerCost;
+                result.monthlyDealerCost = homeQuote.MonthlyDealerCost;
+
+                result.waterWellPump = homeQuote.WaterWellPump;
+                result.refrigeratorIceMaker = homeQuote.RefrigeratorIceMaker;
+                result.standAloneIceMaker = homeQuote.StandAloneIceMaker;
+                result.secondaryRefrigerator = homeQuote.SecondaryRefrigerator;
+                result.secondaryFreezer = homeQuote.SecondaryFreezer;
+                result.swimmingPool = homeQuote.SwimmingPool;
+                result.spa = homeQuote.Spa;
+                result.clothesWasherDryer = homeQuote.ClothesWasherDryer;
+                result.centralVac = homeQuote.CentralVac;
+                result.garageDoorOpener = homeQuote.GarageDoorOpener;
+
+                results.add(result);
+            }
+
+            return results;
+
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (Exception e) {
+            System.debug(
+                LoggingLevel.ERROR,
+                'Home Warranty quote retrieval failed: ' +
+                e.getMessage() + '\n' + e.getStackTraceString()
+            );
+
+            throw new AuraHandledException(
+                'Unable to retrieve Home Warranty quotes. ' +
+                'Please contact your Salesforce administrator.'
+            );
+        }
+    }
+
+    // ============================================================
+    // UNSUPPORTED QUOTE TYPE
+    // ============================================================
+    throw new AuraHandledException(
+        'Unsupported Quote Type: ' + quoteType
+    );
+}
+
 
 
     // ============================================================
@@ -632,80 +815,126 @@ List<CalculationMatrixVersion> versions = [
     // ADD OPTIONS FROM DECISION MATRIX
     // ============================================================
 
-    private static void addOptionsFromMatrix(
-        String matrixName,
-        List<DropdownOption> results
-    ) {
-
-        if (String.isBlank(matrixName)) {
-            return;
-        }
-
-        List<CalculationMatrix> matrices = [
-            SELECT Id,
-                   UniqueName
-            FROM CalculationMatrix
-            WHERE UniqueName = :matrixName
-            LIMIT 1
-        ];
-
-        if (matrices.isEmpty()) {
-            return;
-        }
-
-        List<CalculationMatrixVersion> versions = [
-            SELECT Id
-            FROM CalculationMatrixVersion
-            WHERE CalculationMatrixId = :matrices[0].Id
-              AND IsEnabled = true
-            ORDER BY CreatedDate DESC
-            LIMIT 1
-        ];
-
-        if (versions.isEmpty()) {
-            return;
-        }
-
-        List<CalculationMatrixRow> rows = [
-            SELECT Id,
-                   InputData,
-                   OutputData
-            FROM CalculationMatrixRow
-            WHERE CalculationMatrixVersionId = :versions[0].Id
-        ];
-
-        for (CalculationMatrixRow row : rows) {
-
-            if (String.isBlank(row.InputData)) {
-                continue;
-            }
-
-            Map<String, Object> inputData =
-                parseJson(row.InputData);
-
-            String optionName =
-                getStringValue(inputData, 'OptionName');
-
-            if (String.isBlank(optionName)) {
-                continue;
-            }
-
-            /*
-             * Requirement:
-             * Do not include "Others".
-             */
-            if (optionName.equalsIgnoreCase('Others')) {
-                continue;
-            }
-
-            results.add(
-                new DropdownOption(
-                    optionName,
-                    optionName
-                )
-            );
-        }
+   
+private static void addOptionsFromMatrix(
+    String matrixName,
+    String coverageLevel,
+    List<DropdownOption> results
+) {
+    if (String.isBlank(matrixName) ||
+        String.isBlank(coverageLevel) ||
+        results == null) {
+        return;
     }
+
+    // 1. Find the mapped options decision matrix.
+    List<CalculationMatrix> matrices = [
+        SELECT Id, UniqueName
+        FROM CalculationMatrix
+        WHERE UniqueName = :matrixName
+        LIMIT 1
+    ];
+
+    if (matrices.isEmpty()) {
+        System.debug(
+            LoggingLevel.WARN,
+            'Options matrix not found: ' + matrixName
+        );
+        return;
+    }
+
+    Datetime currentDateTime = System.now();
+
+    // 2. Find an enabled, currently effective version.
+    List<CalculationMatrixVersion> versions = [
+        SELECT Id,
+               CalculationMatrixId,
+               IsEnabled,
+               Rank,
+               StartDateTime,
+               EndDateTime,
+               VersionNumber
+        FROM CalculationMatrixVersion
+        WHERE CalculationMatrixId = :matrices[0].Id
+          AND IsEnabled = true
+          AND (
+              StartDateTime = null
+              OR StartDateTime <= :currentDateTime
+          )
+          AND (
+              EndDateTime = null
+              OR EndDateTime > :currentDateTime
+          )
+        ORDER BY Rank ASC NULLS LAST,
+                 VersionNumber DESC
+        LIMIT 1
+    ];
+
+    if (versions.isEmpty()) {
+        System.debug(
+            LoggingLevel.WARN,
+            'No enabled and effective version found for: '
+            + matrixName
+        );
+        return;
+    }
+
+    // 3. Read enabled rows from the selected version.
+    List<CalculationMatrixRow> rows = [
+        SELECT Id,
+               InputData,
+               OutputData,
+               IsVersionEnabled
+        FROM CalculationMatrixRow
+        WHERE CalculationMatrixVersionId = :versions[0].Id
+          AND IsVersionEnabled = true
+    ];
+
+    // 4. Extract options for the requested coverage level.
+    for (CalculationMatrixRow row : rows) {
+        Map<String, Object> inputData = parseJson(row.InputData);
+        Map<String, Object> outputData = parseJson(row.OutputData);
+
+        String rowCoverage =
+            getStringValue(inputData, 'CoverageName');
+
+        if (String.isBlank(rowCoverage)) {
+            rowCoverage =
+                getStringValue(outputData, 'CoverageName');
+        }
+
+        String optionName =
+            getStringValue(inputData, 'OptionName');
+
+        if (String.isBlank(optionName)) {
+            optionName =
+                getStringValue(outputData, 'OptionName');
+        }
+
+        if (String.isBlank(rowCoverage) ||
+            String.isBlank(optionName)) {
+            continue;
+        }
+
+        if (!rowCoverage.trim().equalsIgnoreCase(
+            coverageLevel.trim()
+        )) {
+            continue;
+        }
+
+        optionName = optionName.trim();
+
+        // Do not display Others.
+        if (optionName.equalsIgnoreCase('Others')) {
+            continue;
+        }
+
+        results.add(
+            new DropdownOption(optionName, optionName)
+        );
+    }
+}
+
 
 
     // ============================================================
@@ -836,4 +1065,248 @@ List<CalculationMatrixVersion> versions = [
             return aValue.compareTo(bValue);
         }
     }
+
+    
+    // ============================================================
+    // GET RESIDENCE TYPES FOR HOME WARRANTY
+    // ============================================================
+
+@AuraEnabled(cacheable=true)
+public static List<DropdownOption> getResidenceTypes(
+    String client,
+    String product
+) {
+    List<DropdownOption> results = new List<DropdownOption>();
+    Map<String, String> uniqueResidenceTypes = new Map<String, String>();
+
+    if (String.isBlank(client) || String.isBlank(product)) {
+        return results;
+    }
+
+    // 1. Get the client configuration.
+    Quote_Client_Config__mdt config = getClientConfig(client);
+
+    if (config == null) {
+        return results;
+    }
+
+    // Use the Auto-specific lookup for Auto clients.
+    // Keep the original lookup for Home Warranty clients.
+    String dealerLookupMatrix;
+
+    if (config.Auto_Enabled__c == true) {
+        dealerLookupMatrix = config.Auto_Dealer_Lookup_Matrix__c;
+    } else {
+        dealerLookupMatrix = config.Dealer_Lookup_Matrix__c;
+    }
+
+    if (String.isBlank(dealerLookupMatrix)) {
+        return results;
+    }
+
+    // 2. Read dealer lookup rows.
+    List<CalculationMatrixRow> dealerRows =
+        getDealerLookupRows(dealerLookupMatrix);
+
+        System.debug(LoggingLevel.ERROR,
+        'HOME ResidenceType - Client: ' + client +
+        ', Product: ' + product +
+        ', Dealer Matrix: ' + dealerLookupMatrix +
+        ', Dealer Rows: ' + dealerRows.size()
+    );
+
+    // 3. Index mappings by table name and coverage level.
+    Map<String, DecisionMatrixMapping__mdt> mappingsByKey =
+        new Map<String, DecisionMatrixMapping__mdt>();
+
+    for (DecisionMatrixMapping__mdt mapping :
+         DecisionMatrixMapping__mdt.getAll().values()) {
+
+        if (mapping == null ||
+            String.isBlank(mapping.Table_Name__c) ||
+            String.isBlank(mapping.Coverage_Level__c) ||
+            String.isBlank(mapping.Decision_Matrix_Name__c)) {
+            continue;
+        }
+
+        String key =
+            mapping.Table_Name__c.trim().toLowerCase() + '|' +
+            mapping.Coverage_Level__c.trim().toLowerCase();
+
+        mappingsByKey.put(key, mapping);
+    }
+
+    // 4. Find rate matrices for the selected client and product.
+    Set<String> rateMatrixNames = new Set<String>();
+
+    for (CalculationMatrixRow row : dealerRows) {
+        Map<String, Object> inputData = parseJson(row.InputData);
+        Map<String, Object> outputData = parseJson(row.OutputData);
+
+        String rowClient = getStringValue(outputData, 'Client');
+        if (String.isBlank(rowClient)) {
+            rowClient = getStringValue(inputData, 'Client');
+        }
+
+        String rowProduct = getStringValue(outputData, 'Product');
+        if (String.isBlank(rowProduct)) {
+            rowProduct = getStringValue(inputData, 'Product');
+        }
+
+        if (String.isBlank(rowClient) ||
+            String.isBlank(rowProduct) ||
+            !rowClient.trim().equalsIgnoreCase(client.trim()) ||
+            !rowProduct.trim().equalsIgnoreCase(product.trim())) {
+            continue;
+        }
+
+        String rateSet = getStringValue(outputData, 'RateSet');
+        if (String.isBlank(rateSet)) {
+            rateSet = getStringValue(inputData, 'RateSet');
+        }
+
+        String coverageLevel =
+            getStringValue(outputData, 'CoverageLevel');
+
+        if (String.isBlank(coverageLevel)) {
+            coverageLevel =
+                getStringValue(inputData, 'CoverageLevel');
+        }
+
+        if (String.isBlank(rateSet) ||
+            String.isBlank(coverageLevel)) {
+            continue;
+        }
+
+        String mappingKey =
+            rateSet.trim().toLowerCase() + '|' +
+            coverageLevel.trim().toLowerCase();
+
+        DecisionMatrixMapping__mdt mapping =
+            mappingsByKey.get(mappingKey);
+
+        if (mapping != null &&
+            String.isNotBlank(mapping.Decision_Matrix_Name__c)) {
+            rateMatrixNames.add(
+                mapping.Decision_Matrix_Name__c.trim()
+            );
+        }
+    }
+
+    System.debug(LoggingLevel.ERROR,
+    'HOME ResidenceType - Rate Matrix Names: ' + rateMatrixNames
+);
+
+    if (rateMatrixNames.isEmpty()) {
+        return results;
+    }
+
+    // 5. Resolve rate matrices.
+    Map<Id, String> matrixNameById = new Map<Id, String>();
+
+    for (CalculationMatrix matrix : [
+        SELECT Id, UniqueName
+        FROM CalculationMatrix
+        WHERE UniqueName IN :rateMatrixNames
+    ]) {
+        matrixNameById.put(matrix.Id, matrix.UniqueName);
+    }
+
+    if (matrixNameById.isEmpty()) {
+        return results;
+    }
+
+   /* // 6. Read enabled versions that are currently effective.
+    Datetime currentDateTime = System.now();
+    Set<Id> versionIds = new Set<Id>();
+
+    for (CalculationMatrixVersion version : [
+        SELECT Id
+        FROM CalculationMatrixVersion
+        WHERE CalculationMatrixId IN :matrixNameById.keySet()
+          AND IsEnabled = true
+          AND StartDateTime <= :currentDateTime
+          AND (EndDateTime = null OR EndDateTime > :currentDateTime)
+    ]) {
+        versionIds.add(version.Id);
+    }
+
+    if (versionIds.isEmpty()) {
+        return results;
+    }*/
+
+    // Step 6: Get enabled matrix versions.
+// Keep this consistent with QuoteServiceHome.rateCostLookupHW().
+Set<Id> versionIds = new Set<Id>();
+
+for (CalculationMatrixVersion version : [
+    SELECT Id
+    FROM CalculationMatrixVersion
+    WHERE CalculationMatrixId IN :matrixNameById.keySet()
+      AND IsEnabled = true
+      AND EndDateTime = null
+]) {
+    versionIds.add(version.Id);
+}
+
+
+if (versionIds.isEmpty()) {
+    return results;
+}
+
+System.debug(LoggingLevel.ERROR,
+    'HOME ResidenceType - Matrix IDs: ' + matrixNameById.keySet() +
+    ', Enabled Version IDs: ' + versionIds
+);
+
+    // 7. Extract ResidenceType from either InputData or OutputData.
+    for (CalculationMatrixRow row : [
+        SELECT InputData, OutputData
+        FROM CalculationMatrixRow
+        WHERE CalculationMatrixVersionId IN :versionIds
+    ]) {
+        Map<String, Object> inputData = parseJson(row.InputData);
+        Map<String, Object> outputData = parseJson(row.OutputData);
+
+        String residenceType =
+            getStringValue(inputData, 'ResidenceType');
+
+        if (String.isBlank(residenceType)) {
+            residenceType =
+                getStringValue(outputData, 'ResidenceType');
+        }
+
+        if (String.isBlank(residenceType)) {
+            continue;
+        }
+
+        residenceType = residenceType.trim();
+        String normalizedKey = residenceType.toLowerCase();
+
+        if (!uniqueResidenceTypes.containsKey(normalizedKey)) {
+            uniqueResidenceTypes.put(normalizedKey, residenceType);
+        }
+    }
+
+    System.debug(LoggingLevel.ERROR,
+    'HOME ResidenceType - Unique Values: ' + uniqueResidenceTypes
+);
+
+    // 8. Return sorted options.
+    List<String> sortedResidenceTypes =
+        uniqueResidenceTypes.values();
+
+    sortedResidenceTypes.sort();
+
+    for (String residenceType : sortedResidenceTypes) {
+        results.add(
+            new DropdownOption(residenceType, residenceType)
+        );
+    }
+
+    results.sort(new DropdownOptionComparator());
+
+    return results;
+}
+
 }

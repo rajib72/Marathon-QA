@@ -57,17 +57,20 @@ global with sharing class AutoClaimsInformationAPI {
 * INDIVIDUAL CLAIM RESPONSE
 * ============================================================
 */
-    public class ClaimResponse {
-        
-        public String ClaimNumber;
-        public String Status;
-        public String PaidAmount;
-       public String ApprovedAmount;
-        public String RequestedAmount;
-        public String LatestPaidDate;
-        public String DenialReason;
-        public String CreatedDate;
-    }
+   public class ClaimResponse {
+
+    public String ClaimNumber;
+    public String Status;
+    public String Complaints;
+    public String Cause;
+    public String Correction;
+    public String PaidAmount;
+    public String ApprovedAmount;
+    public String RequestedAmount;
+    public String LatestPaidDate;
+    public String DenialReason;
+    public String CreatedDate;
+}
     
     
     /*
@@ -263,20 +266,23 @@ global with sharing class AutoClaimsInformationAPI {
 * Claim.PolicyNumberId -> InsurancePolicy.Id
 * ----------------------------------------------------
 */
-            List<Claim> claimRecords = [
-                SELECT Id,
-                Name,
-                Status,
-                Claim_Amount_Paid__c,
-                ApprovedAmount,
-                NetClaim__c,
-                Latest_Date_Paid__c,
-                Denial_Reason__c,
-                CreatedDate
-                FROM Claim
-                WHERE PolicyNumberId = :policy.Id
-                ORDER BY CreatedDate DESC
-            ];
+           List<Claim> claimRecords = [
+    SELECT Id,
+           Name,
+           Status,
+           Complaints__c,
+           Cause__c,
+           Correction__c,
+           Claim_Amount_Paid__c,
+           ApprovedAmount,
+           NetClaim__c,
+           Latest_Date_Paid__c,
+           Denial_Reason__c,
+           CreatedDate
+    FROM Claim
+    WHERE PolicyNumberId = :policy.Id
+    ORDER BY CreatedDate DESC
+];
             /*
 * ----------------------------------------------------
 * STEP 9: Prepare Claim response list
@@ -377,6 +383,15 @@ claimResponse.ApprovedAmount =
                     : '';
                 
                 
+
+ claimResponse.Complaints = claimRecord.Complaints__c != null
+    ? claimRecord.Complaints__c : '';
+
+claimResponse.Cause = claimRecord.Cause__c != null
+    ? claimRecord.Cause__c : '';
+
+claimResponse.Correction = claimRecord.Correction__c != null
+    ? claimRecord.Correction__c : '';
                 /*
 * Add claim to response list
 */
@@ -481,6 +496,21 @@ gen.writeStringField(
     claimResponse.Status != null
     ? claimResponse.Status
     : ''
+);
+
+gen.writeStringField(
+    'Complaints',
+    claimResponse.Complaints != null ? claimResponse.Complaints : ''
+);
+
+gen.writeStringField(
+    'Cause',
+    claimResponse.Cause != null ? claimResponse.Cause : ''
+);
+
+gen.writeStringField(
+    'Correction',
+    claimResponse.Correction != null ? claimResponse.Correction : ''
 );
 
 // PaidAmount

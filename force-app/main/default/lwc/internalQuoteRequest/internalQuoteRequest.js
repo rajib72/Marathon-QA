@@ -1,6 +1,6 @@
 import {
     LightningElement,
-    track
+    track,wire
 } from 'lwc';
 
 import getClients
@@ -14,6 +14,17 @@ import getOptions
 
 import getQuotes
     from '@salesforce/apex/InternalQuoteRequestController.getQuotes';
+
+import { getObjectInfo, getPicklistValues } from 'lightning/uiObjectInfoApi';
+
+import REPORT_REQUEST_OBJECT
+    from '@salesforce/schema/Report_Request__c';
+
+import STATE_FIELD
+    from '@salesforce/schema/Report_Request__c.State__c';
+
+import getResidenceTypes
+    from '@salesforce/apex/InternalQuoteRequestController.getResidenceTypes';
 
 import {
     ShowToastEvent
@@ -41,8 +52,19 @@ export default class InternalQuoteRequest
     @track state = '';
 
     @track vin = '';
+    
 
     @track selectedOptions = [];
+    @track quoteType = '';
+    @track residenceType = '';
+
+    @track quoteTypeOptions = [
+    { label: 'Auto', value: 'Auto' },
+    {  label: 'Home', value: 'Home' }
+];
+
+// Populate these with the actual residence types accepted by Apex.
+@track residenceTypeOptions = [];
 
 
     // ============================================================
@@ -56,6 +78,41 @@ export default class InternalQuoteRequest
     @track optionOptions = [];
 
     @track stateOptions = [];
+    
+    // DYNAMIC STATE PICKLIST
+recordTypeId;
+
+@wire(getObjectInfo, {
+    objectApiName: REPORT_REQUEST_OBJECT
+})
+wiredObjectInfo({ data, error }) {
+    if (data) {
+        this.recordTypeId = data.defaultRecordTypeId;
+    } else if (error) {
+        this.showError(
+            'Error loading State configuration',
+            this.getErrorMessage(error)
+        );
+    }
+}
+
+@wire(getPicklistValues, {
+    recordTypeId: '$recordTypeId',
+    fieldApiName: STATE_FIELD
+})
+wiredStateValues({ data, error }) {
+    if (data) {
+        this.stateOptions = data.values.map(item => ({
+            label: item.label,
+            value: item.value
+        }));
+    } else if (error) {
+        this.showError(
+            'Error loading States',
+            this.getErrorMessage(error)
+        );
+    }
+}
 
 
     // ============================================================
@@ -75,233 +132,20 @@ export default class InternalQuoteRequest
 
     connectedCallback() {
 
-        this.initializeStateOptions();
+     //   this.initializeStateOptions();
 
-        this.loadClients();
+
+       // this.loadClients();
 
     }
 
-
-    // ============================================================
-    // STATE OPTIONS
-    // ============================================================
-
-    initializeStateOptions() {
-
-        const states = [
-
-            {
-                label: 'AL',
-                value: 'AL'
-            },
-            {
-                label: 'AK',
-                value: 'AK'
-            },
-            {
-                label: 'AZ',
-                value: 'AZ'
-            },
-            {
-                label: 'AR',
-                value: 'AR'
-            },
-            {
-                label: 'CA',
-                value: 'CA'
-            },
-            {
-                label: 'CO',
-                value: 'CO'
-            },
-            {
-                label: 'CT',
-                value: 'CT'
-            },
-            {
-                label: 'DE',
-                value: 'DE'
-            },
-            {
-                label: 'FL',
-                value: 'FL'
-            },
-            {
-                label: 'GA',
-                value: 'GA'
-            },
-            {
-                label: 'HI',
-                value: 'HI'
-            },
-            {
-                label: 'ID',
-                value: 'ID'
-            },
-            {
-                label: 'IL',
-                value: 'IL'
-            },
-            {
-                label: 'IN',
-                value: 'IN'
-            },
-            {
-                label: 'IA',
-                value: 'IA'
-            },
-            {
-                label: 'KS',
-                value: 'KS'
-            },
-            {
-                label: 'KY',
-                value: 'KY'
-            },
-            {
-                label: 'LA',
-                value: 'LA'
-            },
-            {
-                label: 'ME',
-                value: 'ME'
-            },
-            {
-                label: 'MD',
-                value: 'MD'
-            },
-            {
-                label: 'MA',
-                value: 'MA'
-            },
-            {
-                label: 'MI',
-                value: 'MI'
-            },
-            {
-                label: 'MN',
-                value: 'MN'
-            },
-            {
-                label: 'MS',
-                value: 'MS'
-            },
-            {
-                label: 'MO',
-                value: 'MO'
-            },
-            {
-                label: 'MT',
-                value: 'MT'
-            },
-            {
-                label: 'NE',
-                value: 'NE'
-            },
-            {
-                label: 'NV',
-                value: 'NV'
-            },
-            {
-                label: 'NH',
-                value: 'NH'
-            },
-            {
-                label: 'NJ',
-                value: 'NJ'
-            },
-            {
-                label: 'NM',
-                value: 'NM'
-            },
-            {
-                label: 'NY',
-                value: 'NY'
-            },
-            {
-                label: 'NC',
-                value: 'NC'
-            },
-            {
-                label: 'ND',
-                value: 'ND'
-            },
-            {
-                label: 'OH',
-                value: 'OH'
-            },
-            {
-                label: 'OK',
-                value: 'OK'
-            },
-            {
-                label: 'OR',
-                value: 'OR'
-            },
-            {
-                label: 'PA',
-                value: 'PA'
-            },
-            {
-                label: 'RI',
-                value: 'RI'
-            },
-            {
-                label: 'SC',
-                value: 'SC'
-            },
-            {
-                label: 'SD',
-                value: 'SD'
-            },
-            {
-                label: 'TN',
-                value: 'TN'
-            },
-            {
-                label: 'TX',
-                value: 'TX'
-            },
-            {
-                label: 'UT',
-                value: 'UT'
-            },
-            {
-                label: 'VT',
-                value: 'VT'
-            },
-            {
-                label: 'VA',
-                value: 'VA'
-            },
-            {
-                label: 'WA',
-                value: 'WA'
-            },
-            {
-                label: 'WV',
-                value: 'WV'
-            },
-            {
-                label: 'WI',
-                value: 'WI'
-            },
-            {
-                label: 'WY',
-                value: 'WY'
-            }
-
-        ];
-
-        this.stateOptions = states;
-    }
 
 
     // ============================================================
     // LOAD CLIENTS
     // ============================================================
 
-    async loadClients() {
+  /*  async loadClients() {
 
         this.isLoadingClients = true;
 
@@ -324,7 +168,37 @@ export default class InternalQuoteRequest
             this.isLoadingClients = false;
 
         }
+    }*/
+
+
+        
+async loadClients() {
+    if (!this.quoteType) {
+        this.clientOptions = [];
+        this.client = '';
+        return;
     }
+
+    this.isLoadingClients = true;
+
+    try {
+        const result = await getClients({
+            quoteType: this.quoteType
+        });
+
+        this.clientOptions = result || [];
+    } catch (error) {
+        this.clientOptions = [];
+        this.showError(
+            'Error loading clients',
+            this.getErrorMessage(error)
+        );
+    } finally {
+        this.isLoadingClients = false;
+    }
+}
+
+
 
 
     // ============================================================
@@ -341,6 +215,8 @@ export default class InternalQuoteRequest
          */
 
         this.product = '';
+        this.residenceType = '';
+        this.residenceTypeOptions = []; 
 
         this.productOptions = [];
 
@@ -422,6 +298,8 @@ async handleProductChange(event) {
             }));
 
         this.showOptionsDropdown = this.optionOptions.length > 0;
+        // Load Residence Type values for Home products.
+        await this.loadResidenceTypes();
 
     } catch (error) {
         this.showOptionsDropdown = false;
@@ -433,6 +311,74 @@ async handleProductChange(event) {
 
     } finally {
         this.isLoading = false;
+    }
+}
+
+
+
+async loadResidenceTypes() {
+    // Residence Type is applicable only to Home.
+    if (
+        this.quoteType !== 'Home' ||
+        !this.client ||
+        !this.product
+    ) {
+        this.residenceType = '';
+        this.residenceTypeOptions = [];
+        return;
+    }
+
+    // Clear stale values from the previous product.
+    this.residenceType = '';
+    this.residenceTypeOptions = [];
+
+    try {
+        const result = await getResidenceTypes({
+            client: this.client,
+            product: this.product
+        });
+
+        console.log(
+            'Residence Type - Client:',
+            this.client
+        );
+        console.log(
+            'Residence Type - Product:',
+            this.product
+        );
+        console.log(
+            'Residence Type - Apex result:',
+            JSON.stringify(result)
+        );
+
+        this.residenceTypeOptions = (result || [])
+            .filter(option =>
+                option &&
+                option.value &&
+                option.label
+            )
+            .map(option => ({
+                label: option.label,
+                value: option.value
+            }));
+
+        console.log(
+            'Residence Type - Dropdown options:',
+            JSON.stringify(this.residenceTypeOptions)
+        );
+
+        if (this.residenceTypeOptions.length === 0) {
+            console.warn(
+                'No Residence Type values returned for the selected client and product.'
+            );
+        }
+    } catch (error) {
+        this.residenceTypeOptions = [];
+
+        this.showError(
+            'Error loading Residence Types',
+            this.getErrorMessage(error)
+        );
     }
 }
 
@@ -473,6 +419,56 @@ async handleProductChange(event) {
             event.detail.value;
 
     }
+
+    // ============================================================
+// QUOTE TYPE CHANGE
+// ============================================================
+
+async handleQuoteTypeChange(event) {
+    this.quoteType = event.detail.value;
+
+    // Clear selections dependent on Quote Type.
+    this.client = '';
+    this.product = '';
+    this.selectedOptions = [];
+
+    // Clear dependent dropdown options.
+    this.clientOptions = [];
+    this.productOptions = [];
+    this.optionOptions = [];
+    this.showOptionsDropdown = false;
+
+    // Clear quote-type-specific fields.
+    this.residenceType = '';
+    this.residenceTypeOptions = [];
+    this.saleOdometer = '';
+    this.vin = '';
+
+    // Clear the corresponding UI input values.
+    const fields = this.template.querySelectorAll('lightning-input');
+
+    fields.forEach(field => {
+        if (
+            field.name === 'saleOdometer' ||
+            field.name === 'vin'
+        ) {
+            field.value = null;
+        }
+    });
+
+    // Load clients matching the selected Quote Type.
+    await this.loadClients();
+}
+
+
+
+// ============================================================
+// RESIDENCE TYPE CHANGE
+// ============================================================
+
+handleResidenceTypeChange(event) {
+    this.residenceType = event.detail.value;
+}
 
 
     // ============================================================
@@ -567,6 +563,7 @@ async handleProductChange(event) {
 
             const result =
                 await getQuotes({
+                     quoteType: this.quoteType,
 
                     client: this.client,
 
@@ -582,7 +579,9 @@ async handleProductChange(event) {
                         this.vin,
 
                     options:
-                        this.selectedOptions
+                        this.selectedOptions,
+                    residenceType:
+                    this.residenceType
 
                 });
 
@@ -603,6 +602,7 @@ async handleProductChange(event) {
             sessionStorage.setItem(
                 'internalQuoteRequest',
                 JSON.stringify({
+                    quoteType: this.quoteType,
 
                     client: this.client,
 
@@ -618,7 +618,8 @@ async handleProductChange(event) {
                         this.vin,
 
                     options:
-                        this.selectedOptions
+                        this.selectedOptions,
+                    residenceType: this.residenceType
 
                 })
             );
@@ -656,74 +657,151 @@ async handleProductChange(event) {
     }
 
 
-    // ============================================================
-    // FORM VALIDATION
-    // ============================================================
+  // ============================================================
+// FORM VALIDATION
+// ============================================================
+/*
+validateForm() {
+    let isValid = true;
 
-    validateForm() {
+    // Validate Quote Type
+    if (!this.quoteType) {
+        isValid = false;
+    }
 
-        let isValid = true;
+    // Validate common required fields
+    const commonFields = [
+        'client',
+        'product',
+        'state'
+    ];
 
-        const requiredFields =
-            this.template.querySelectorAll(
-                'lightning-input, lightning-combobox'
-            );
+    commonFields.forEach(fieldName => {
+        const field = this.template.querySelector(
+            `[name="${fieldName}"]`
+        );
 
-        requiredFields.forEach(field => {
-
-            if (
-                field.name === 'saleOdometer' ||
-                field.name === 'vin' ||
-                field.name === 'client' ||
-                field.name === 'product' ||
-                field.name === 'state'
-            ) {
-
-                if (!field.value) {
-
-                    field.reportValidity();
-
-                    isValid = false;
-
-                }
-
+        if (!field || !field.value) {
+            if (field) {
+                field.reportValidity();
             }
+            isValid = false;
+        }
+    });
 
-        });
-
-
-        if (!isValid) {
-
-            this.showError(
-                'Missing Information',
-                'Please complete all required fields.'
+    // Validate Auto-specific fields
+    if (
+        this.quoteType &&
+        this.quoteType.toLowerCase() === 'auto'
+    ) {
+        ['saleOdometer', 'vin'].forEach(fieldName => {
+            const field = this.template.querySelector(
+                `[name="${fieldName}"]`
             );
 
+            if (!field || !field.value || !field.value.trim()) {
+                if (field) {
+                    field.reportValidity();
+                }
+                isValid = false;
+            }
+        });
+    }
+
+    // Home Warranty: Residence Type is optional.
+    // Do not block submission if it is blank.
+
+    if (!isValid) {
+        this.showError(
+            'Missing Information',
+            'Please complete all required fields for the selected quote type.'
+        );
+    }
+
+    return isValid;
+}*/
+
+
+validateForm() {
+    console.log('Quote Type:', this.quoteType);
+    console.log('Client:', this.client);
+    console.log('Product:', this.product);
+    console.log('State:', this.state);
+    console.log('Sale Odometer:', this.saleOdometer);
+    console.log('VIN:', this.vin);
+    console.log('Residence Type:', this.residenceType);
+
+    const missingFields = [];
+
+    // Common required fields
+    if (!this.quoteType) {
+        missingFields.push('Quote Type');
+    }
+
+    if (!this.client) {
+        missingFields.push('Client');
+    }
+
+    if (!this.product) {
+        missingFields.push('Product');
+    }
+
+    if (!this.state) {
+        missingFields.push('State');
+    }
+
+    // Auto-specific required fields
+    if (this.isAuto) {
+        if (!String(this.saleOdometer ?? '').trim()) {
+            missingFields.push('Sale Odometer');
         }
 
-        return isValid;
+        if (!String(this.vin ?? '').trim()) {
+            missingFields.push('VIN');
+        }
     }
+
+    // Home Warranty-specific required field
+    if (this.isHomeWarranty && !this.residenceType) {
+        missingFields.push('Residence Type');
+    }
+
+    if (missingFields.length > 0) {
+        this.showError(
+            'Missing Information',
+            'Please complete: ' + missingFields.join(', ') + '.'
+        );
+
+        return false;
+    }
+
+    return true;
+}
 
 
     // ============================================================
     // RESET
     // ============================================================
 
-   
+
 handleReset() {
+    this.quoteType = '';
     this.client = '';
     this.product = '';
     this.saleOdometer = '';
     this.state = '';
     this.vin = '';
+    this.residenceType = '';
+    this.residenceTypeOptions = [];
 
     this.selectedOptions = [];
+
+    this.clientOptions = [];
     this.productOptions = [];
     this.optionOptions = [];
 
     this.showOptionsDropdown = false;
 
-    // Clear the actual input values in the UI.
     const fields = this.template.querySelectorAll(
         'lightning-input, lightning-combobox'
     );
@@ -736,6 +814,7 @@ handleReset() {
         }
     });
 }
+
 
 
 
@@ -787,6 +866,15 @@ handleReset() {
         }
 
         return 'selected-options-text';
+    }
+
+
+    get isAuto() {  
+    return this.quoteType === 'Auto';
+    }
+
+    get isHomeWarranty() {
+        return this.quoteType === 'Home';
     }
 
 

@@ -234,9 +234,30 @@ global class QuoteService {
      * queries dealer code lookup DM and populates responseMap
      */
     public static Void dealerCodeLookup(String client) {
-        List<CalculationMatrix> dealerLookupRec = new List<CalculationMatrix>([SELECT Id, (SELECT Id FROM CalculationMatrixVersions WHERE IsEnabled = TRUE AND EndDateTime = NULL LIMIT 1) FROM CalculationMatrix WHERE UniqueName = :clientConfig.Auto_Dealer_Lookup_Matrix__c]);
-        // Instantiate HTTP request and response objects
-        String responseBody = ContractUtility.fetchLookupTableRows(dealerLookupRec[0].Id, dealerLookupRec[0].CalculationMatrixVersions[0].Id);
+
+List<CalculationMatrix> dealerLookupRec = [
+    SELECT Id,
+        (SELECT Id
+         FROM CalculationMatrixVersions
+         WHERE IsEnabled = TRUE
+         AND EndDateTime = NULL
+         LIMIT 1)
+    FROM CalculationMatrix
+    WHERE UniqueName = :clientConfig.Auto_Dealer_Lookup_Matrix__c
+];
+
+if (dealerLookupRec.isEmpty() ||
+    dealerLookupRec[0].CalculationMatrixVersions.isEmpty()) {
+    throw new QuoteConfigurationException(
+        'Configured Auto Dealer Lookup Matrix or its active version was not found.'
+    );
+}
+
+String responseBody = ContractUtility.fetchLookupTableRows(
+    dealerLookupRec[0].Id,
+    dealerLookupRec[0].CalculationMatrixVersions[0].Id
+);
+
         //deserialize the response
         Map<String, Object> jsonMap = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
         List<Object> rows = (List<Object>) jsonMap.get('rows');
@@ -287,11 +308,33 @@ global class QuoteService {
      * queries state set guide DM and populates responseMap
      */
     public static Void stateSetLookup(String client) {
-        List<CalculationMatrix> state_Set_GuideRec = new List<CalculationMatrix>([SELECT Id, (SELECT Id FROM CalculationMatrixVersions WHERE IsEnabled = TRUE LIMIT 1) FROM CalculationMatrix WHERE UniqueName = :clientConfig.Auto_State_Set_Guide_Matrix__c]);
-        Set<String> matrixNames = new Set<String>();
-        Map<String, Map<String, String>> uniqueNametoFieldDetails = new Map<String, Map<String, String>>();
-        // Instantiate HTTP request and response objects
-        String responseBody = ContractUtility.fetchLookupTableRows(state_Set_GuideRec[0].Id, state_Set_GuideRec[0].CalculationMatrixVersions[0].Id);
+List<CalculationMatrix> state_Set_GuideRec = [
+    SELECT Id,
+        (SELECT Id
+         FROM CalculationMatrixVersions
+         WHERE IsEnabled = TRUE
+         AND EndDateTime = NULL
+         LIMIT 1)
+    FROM CalculationMatrix
+    WHERE UniqueName = :clientConfig.Auto_State_Set_Guide_Matrix__c
+];
+
+if (state_Set_GuideRec.isEmpty() ||
+    state_Set_GuideRec[0].CalculationMatrixVersions.isEmpty()) {
+    throw new QuoteConfigurationException(
+        'Configured Auto State Set Guide Matrix or its active version was not found.'
+    );
+}
+
+Set<String> matrixNames = new Set<String>();
+Map<String, Map<String, String>> uniqueNametoFieldDetails =
+    new Map<String, Map<String, String>>();
+
+// Instantiate HTTP request and response objects
+String responseBody = ContractUtility.fetchLookupTableRows(
+    state_Set_GuideRec[0].Id,
+    state_Set_GuideRec[0].CalculationMatrixVersions[0].Id
+);
         Map<String, Object> jsonMap = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
         List<Object> rows = (List<Object>) jsonMap.get('rows');
         if (rows != null && !rows.isEmpty()) {
@@ -311,9 +354,29 @@ global class QuoteService {
             //queries state set DMs for each dealer code lookup record
             if(!matrixNames.isEmpty()) {
                 Map<String, String> versionIdtoMatrixName = new Map<String, String>();
-                for(CalculationMatrix matrixRecord : [SELECT Id, UniqueName, (SELECT Id FROM CalculationMatrixVersions WHERE IsEnabled = TRUE AND EndDateTime = NULL LIMIT 1) FROM CalculationMatrix WHERE UniqueName IN : matrixNames]) {
-                    versionIdtoMatrixName.put(matrixRecord.CalculationMatrixVersions[0].Id, matrixRecord.UniqueName);
-                }
+               for (CalculationMatrix matrixRecord : [
+    SELECT Id, UniqueName,
+        (SELECT Id
+         FROM CalculationMatrixVersions
+         WHERE IsEnabled = TRUE
+         AND EndDateTime = NULL
+         LIMIT 1)
+    FROM CalculationMatrix
+    WHERE UniqueName IN :matrixNames
+]) {
+    if (matrixRecord.CalculationMatrixVersions.isEmpty()) {
+        throw new QuoteConfigurationException(
+            'Configured State Set Decision Matrix ' +
+            matrixRecord.UniqueName +
+            ' does not have an active version.'
+        );
+    }
+
+    versionIdtoMatrixName.put(
+        matrixRecord.CalculationMatrixVersions[0].Id,
+        matrixRecord.UniqueName
+    );
+}
 
                 Set<String> versionIds = versionIdtoMatrixName != null ? versionIdtoMatrixName.keySet() : null;
                 if (!versionIds.isEmpty()) {
@@ -399,14 +462,39 @@ global class QuoteService {
             }
         }
         
-        if(!dealerCodeDetailsMap.isEmpty()) {
-            Map<String, String> versionIdtoMatrixName = new Map<String, String>();
-            //queries the rate set DM for each rate set in dealer code lookup row
-            List<CalculationMatrix> matrixRecordList = new List<CalculationMatrix>([SELECT Id, UniqueName, (SELECT Id FROM CalculationMatrixVersions WHERE IsEnabled = TRUE AND EndDateTime = NULL LIMIT 1) FROM CalculationMatrix WHERE UniqueName IN : dealerCodeDetailsMap.keySet()]);
-            for(CalculationMatrix rec : matrixRecordList) {
-                versionIdtoMatrixName.put(rec.CalculationMatrixVersions[0].Id, rec.UniqueName);
-            }
-            if(!versionIdtoMatrixName.isEmpty()) {
+       if (!dealerCodeDetailsMap.isEmpty()) {
+    Map<String, String> versionIdtoMatrixName =
+        new Map<String, String>();
+
+    // Query Rate Set Decision Matrices and active versions
+    List<CalculationMatrix> matrixRecordList = [
+        SELECT Id, UniqueName,
+            (
+                SELECT Id
+                FROM CalculationMatrixVersions
+                WHERE IsEnabled = TRUE
+                AND EndDateTime = NULL
+                LIMIT 1
+            )
+        FROM CalculationMatrix
+        WHERE UniqueName IN :dealerCodeDetailsMap.keySet()
+    ];
+
+    // Validate active versions and populate the map
+    for (CalculationMatrix rec : matrixRecordList) {
+    if (rec.CalculationMatrixVersions.isEmpty()) {
+        throw new QuoteConfigurationException(
+            'Rate Set Decision Matrix ' + rec.UniqueName +
+            ' does not have an active version.'
+        );
+    }
+
+    versionIdtoMatrixName.put(
+        rec.CalculationMatrixVersions[0].Id,
+        rec.UniqueName
+    );
+}
+  if(!versionIdtoMatrixName.isEmpty()) {
                 Set<String> versionIds = versionIdtoMatrixName.keySet();
                 //iterating over matrix version records
                 for(String versionId : versionIds) {
@@ -484,9 +572,28 @@ global class QuoteService {
             Map<String, String> versionIdtoMatrixName = new Map<String, String>();
             //queries the rate set DM for each rate set in dealer code lookup row
             List<CalculationMatrix> matrixRecordList = new List<CalculationMatrix>();
-            for(CalculationMatrix matrixRecord : [SELECT Id, UniqueName, (SELECT Id FROM CalculationMatrixVersions WHERE IsEnabled = TRUE LIMIT 1) FROM CalculationMatrix WHERE UniqueName IN : dealerCodeDetailsMap.keySet()]) {
-                versionIdtoMatrixName.put(matrixRecord.CalculationMatrixVersions[0].Id, matrixRecord.UniqueName);
-            }
+            for (CalculationMatrix matrixRecord : [
+    SELECT Id, UniqueName,
+        (SELECT Id
+         FROM CalculationMatrixVersions
+         WHERE IsEnabled = TRUE
+         AND EndDateTime = NULL
+         LIMIT 1)
+    FROM CalculationMatrix
+    WHERE UniqueName IN :dealerCodeDetailsMap.keySet()
+]) {
+    if (matrixRecord.CalculationMatrixVersions.isEmpty()) {
+        throw new QuoteConfigurationException(
+            'Surcharge Set Decision Matrix ' + matrixRecord.UniqueName +
+            ' does not have an active version.'
+        );
+    }
+
+    versionIdtoMatrixName.put(
+        matrixRecord.CalculationMatrixVersions[0].Id,
+        matrixRecord.UniqueName
+    );
+}
             Set<String> versionIds = versionIdtoMatrixName != null ? versionIdtoMatrixName.keySet() : null;
             if (!versionIds.isEmpty()) {
                 //iterating over matrix version records
@@ -529,9 +636,29 @@ global class QuoteService {
      * queries coverage level DM and populates responseMap
      */
     public static Void callCoverageLevelDM() {
-        List<CalculationMatrix> coverageLevelRec = new List<CalculationMatrix>([SELECT Id, (SELECT Id FROM CalculationMatrixVersions WHERE IsEnabled = TRUE LIMIT 1) FROM CalculationMatrix WHERE UniqueName = :clientConfig.Auto_Coverage_Matrix__c]);
-        // Instantiate HTTP request and response objects
-        String responseBody = ContractUtility.fetchLookupTableRows(coverageLevelRec[0].Id, coverageLevelRec[0].CalculationMatrixVersions[0].Id);
+List<CalculationMatrix> coverageLevelRec = [
+    SELECT Id,
+        (SELECT Id
+         FROM CalculationMatrixVersions
+         WHERE IsEnabled = TRUE
+         AND EndDateTime = NULL
+         LIMIT 1)
+    FROM CalculationMatrix
+    WHERE UniqueName = :clientConfig.Auto_Coverage_Matrix__c
+];
+
+if (coverageLevelRec.isEmpty() ||
+    coverageLevelRec[0].CalculationMatrixVersions.isEmpty()) {
+    throw new QuoteConfigurationException(
+        'Configured Auto Coverage Matrix or its active version was not found.'
+    );
+}
+
+// Instantiate HTTP request and response objects
+String responseBody = ContractUtility.fetchLookupTableRows(
+    coverageLevelRec[0].Id,
+    coverageLevelRec[0].CalculationMatrixVersions[0].Id
+);
         
         Map<String, String> columntoData = new Map<String, String>();
         

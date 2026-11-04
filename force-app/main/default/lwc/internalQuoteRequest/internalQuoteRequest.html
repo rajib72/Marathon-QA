@@ -45,6 +45,30 @@
             <div class="form-body">
 
                 <!-- =================================================
+                    QUOTE TYPE
+                    ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        Type
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-combobox
+                        name="quoteType"
+                        value={quoteType}
+                        options={quoteTypeOptions}
+                        placeholder="Select Quote Type"
+                        onchange={handleQuoteTypeChange}
+                        >
+                    </lightning-combobox>
+
+                </div>
+
+
+
+                <!-- =================================================
                      CLIENT
                      ================================================= -->
 
@@ -94,22 +118,24 @@
                      SALE ODOMETER
                      ================================================= -->
 
-                <div class="form-field">
+                    <!-- SALE ODOMETER: Auto only -->
+                    <template if:true={isAuto}>
+                        <div class="form-field">
+                            <label class="required-label">
+                                Sale Odometer
+                                <span class="required-star">*</span>
+                            </label>
 
-                    <label class="required-label">
-                        Sale Odometer
-                        <span class="required-star">*</span>
-                    </label>
+                            <lightning-input
+                                type="text"
+                                name="saleOdometer"
+                                value={saleOdometer}
+                                placeholder="Enter Sale Odometer"
+                                onchange={handleInputChange}>
+                            </lightning-input>
+                        </div>
+                    </template>
 
-                    <lightning-input
-                        type="text"
-                        name="saleOdometer"
-                        value={saleOdometer}
-                        placeholder="Enter Sale Odometer"
-                        onchange={handleInputChange}>
-                    </lightning-input>
-
-                </div>
 
 
                 <!-- =================================================
@@ -128,7 +154,8 @@
                         value={state}
                         options={stateOptions}
                         placeholder="Select State"
-                        onchange={handleStateChange}>
+                        onchange={handleStateChange}
+                        >
                     </lightning-combobox>
 
                 </div>
@@ -138,22 +165,25 @@
                      VIN
                      ================================================= -->
 
-                <div class="form-field">
+                                
+                    <!-- VIN: Auto only -->
+                    <template if:true={isAuto}>
+                        <div class="form-field">
+                            <label class="required-label">
+                                VIN
+                                <span class="required-star">*</span>
+                            </label>
 
-                    <label class="required-label">
-                        VIN
-                        <span class="required-star">*</span>
-                    </label>
+                            <lightning-input
+                                type="text"
+                                name="vin"
+                                value={vin}
+                                placeholder="Enter VIN"
+                                onchange={handleInputChange}>
+                            </lightning-input>
+                        </div>
+                    </template>
 
-                    <lightning-input
-                        type="text"
-                        name="vin"
-                        value={vin}
-                        placeholder="Enter VIN"
-                        onchange={handleInputChange}>
-                    </lightning-input>
-
-                </div>
 
 
                 <!-- =================================================
@@ -230,9 +260,37 @@
 
                     </div>
 
+                    <!-- =================================================
+                        RESIDENCE TYPE
+                        Display only for Home Warranty
+                        ================================================= -->
+
+                   
+                <!-- RESIDENCE TYPE: Home Warranty only -->
+
+                <template if:true={isHomeWarranty}>
+                    <div class="form-field">
+                    <label class="required-label">
+                            Residence Type
+                            <span class="required-star">*</span>
+                        </label>
+
+                        <lightning-combobox
+                            name="residenceType"
+                            value={residenceType}
+                            options={residenceTypeOptions}
+                            placeholder="Select Residence Type"
+                            onchange={handleResidenceTypeChange}>
+                        </lightning-combobox>
+                    </div>
+                </template>
+
+
                 </div>
 
             </div>
+
+
 
 
             <!-- =====================================================

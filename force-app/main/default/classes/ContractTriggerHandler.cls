@@ -4,7 +4,7 @@
 * @description Trigger Handler on Contract-InsurancePolicy
 */
 public class ContractTriggerHandler {
-    private static final String NOTIFICATION_SOURCE_OBJECT =
+    /*private static final String NOTIFICATION_SOURCE_OBJECT =
         'InsurancePolicy';
     
     private static final String STATUS_FIELD =
@@ -35,7 +35,7 @@ public class ContractTriggerHandler {
         'FINANCE_PAST_DUE';
     
     private static final String EVENT_FINANCE_CURRENT =
-        'FINANCE_CURRENT';
+        'FINANCE_CURRENT';*/
     
     public static void handleBeforeInsert(List<InsurancePolicy> newContracts) {
         findDuplicateContracts(newContracts);
@@ -73,7 +73,7 @@ public class ContractTriggerHandler {
 * Notification failures must not block the underlying
 * InsurancePolicy update.
 */
-    public static void handleAfterUpdate(List<InsurancePolicy> newContracts,Map<Id, InsurancePolicy> oldContractMap) {
+  /*  public static void handleAfterUpdate(List<InsurancePolicy> newContracts,Map<Id, InsurancePolicy> oldContractMap) {
         if (
             newContracts == null ||
             newContracts.isEmpty() ||
@@ -98,7 +98,7 @@ public class ContractTriggerHandler {
             
             QDX_Log.publish();
         }
-    }
+    }*/
     
     public static void updateStatus(List<InsurancePolicy> newContracts, Map<Id,InsurancePolicy> oldContractMap){
         // this method is used for the upadting status of Contracts
@@ -1073,6 +1073,9 @@ contractRecord.addError('Contract validation failed: For Auto contracts, the Val
         // ============================================================
         // Calculate Allocation Amounts
         // ============================================================
+        List<DeferredPremiumTaxContext> deferredPremiumTaxes =
+            new List<DeferredPremiumTaxContext>();
+
         for (InsurancePolicy contract : contracts) {
 
             if (contract == null ||
@@ -1119,6 +1122,8 @@ contractRecord.addError('Contract validation failed: For Auto contracts, the Val
             // Track allocation field values separately.
             Map<String, Decimal> descriptorTotals =
                 new Map<String, Decimal>();
+            List<Allocation_Code__c> deferredTaxAllocations =
+                new List<Allocation_Code__c>();
 
             for (Allocation_Code__c alloc :
                 allocationMap.get(key)) {
@@ -1248,6 +1253,13 @@ contractRecord.addError('Contract validation failed: For Auto contracts, the Val
                     optionMatch &&
                     dateMatch) {
 
+                    // CLIP-dependent tax needs the completed allocation inputs.
+                    // Preserve the existing calculation path for all other rows.
+                    if (shouldDeferPremiumTax(alloc)) {
+                        deferredTaxAllocations.add(alloc);
+                        continue;
+                    }
+
                     Decimal allocationAmount =
                         ContractAllocationUtilityCtrl.calculateMaxAllocation(
                                 contract,
@@ -1315,6 +1327,126 @@ contractRecord.addError('Contract validation failed: For Auto contracts, the Val
 
             contract.Allocation_Expense_Amount__c =
                 totalExpense;
+
+            if (!deferredTaxAllocations.isEmpty()) {
+                deferredPremiumTaxes.add(new DeferredPremiumTaxContext(
+                    contract, deferredTaxAllocations, descriptorTotals, totalProjected
+                ));
+            }
+        }
+
+        applyDeferredPremiumTax(deferredPremiumTaxes, descriptorFieldMap);
+    }
+
+    // Keep dependent tax separate from the original allocation pass. All matching
+    // rules, configured amounts, and calculations for other allocations stay above.
+    @TestVisible
+    private static Boolean shouldDeferPremiumTax(Allocation_Code__c allocation) {
+        if (allocation == null || allocation.Descriptor__c != 'Premium Tax' ||
+            allocation.Is_Expense__c == true ||
+            String.isBlank(allocation.Allocation_Amount__c)) {
+            return false;
+        }
+        // Ignore quoted text and relationship fields with the same leaf name.
+        Matcher references = Pattern.compile(
+            '(?i)("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\')|' +
+            '(?<![A-Z0-9_.])\\b(CLIP_Fee__c)\\b'
+        ).matcher(allocation.Allocation_Amount__c);
+        while (references.find()) {
+            if (references.group(2) != null) return true;
+        }
+        return false;
+    }
+
+    @TestVisible
+    private class DeferredPremiumTaxContext {
+        private InsurancePolicy policy;
+        private List<Allocation_Code__c> allocations;
+        private Map<String, Decimal> baseDescriptorTotals;
+        private Decimal baseProjectedTotal;
+
+        public DeferredPremiumTaxContext(
+            InsurancePolicy policy,
+            List<Allocation_Code__c> allocations,
+            Map<String, Decimal> descriptorTotals,
+            Decimal projectedTotal
+        ) {
+            this.policy = policy;
+            this.allocations = allocations;
+            this.baseDescriptorTotals = new Map<String, Decimal>(descriptorTotals);
+            this.baseProjectedTotal = projectedTotal;
+        }
+    }
+
+    @TestVisible
+    private static void applyDeferredPremiumTax(
+        List<DeferredPremiumTaxContext> contexts,
+        Map<String, String> descriptorFieldMap
+    ) {
+        if (contexts.isEmpty()) return;
+
+        // Recalculate detached copies, not Trigger.new. One bulk call refreshes
+        // CLIP_Fee__c and Written_Reserve__c without DML or formula-field writes.
+        List<SObject> calculationCopies = new List<SObject>();
+        for (DeferredPremiumTaxContext context : contexts) {
+            calculationCopies.add(context.policy.clone(true, true, false, false));
+        }
+
+        List<System.FormulaRecalcResult> results;
+        try {
+            results = System.Formula.recalculateFormulas(calculationCopies);
+        } catch (Exception ex) {
+            for (DeferredPremiumTaxContext context : contexts) {
+                context.policy.addError(
+                    'Premium Tax formula refresh failed: ' + ex.getMessage()
+                );
+            }
+            return;
+        }
+
+        for (Integer index = 0; index < contexts.size(); index++) {
+            DeferredPremiumTaxContext context = contexts[index];
+            System.FormulaRecalcResult result = results[index];
+            if (!result.isSuccess()) {
+                context.policy.addError(
+                    'Premium Tax formula refresh failed: ' +
+                    String.valueOf(result.getErrors())
+                );
+                continue;
+            }
+
+            InsurancePolicy calculationPolicy = (InsurancePolicy) result.getSObject();
+            Map<String, Decimal> descriptorTotals =
+                new Map<String, Decimal>(context.baseDescriptorTotals);
+            Decimal projectedTotal = context.baseProjectedTotal;
+
+            for (Allocation_Code__c allocation : context.allocations) {
+                Decimal amount = ContractAllocationUtilityCtrl.calculateMaxAllocation(
+                    calculationPolicy, allocation
+                );
+                if (amount == null) continue;
+
+                // Only non-expense, CLIP-dependent Premium Tax is deferred.
+                projectedTotal += amount;
+                if (descriptorFieldMap.containsKey(allocation.Descriptor__c)) {
+                    String fieldAPI = descriptorFieldMap.get(allocation.Descriptor__c);
+                    Decimal existingTotal = descriptorTotals.containsKey(fieldAPI)
+                        ? descriptorTotals.get(fieldAPI) : 0;
+                    descriptorTotals.put(fieldAPI, existingTotal + amount);
+                }
+            }
+
+            // Copy only allocation outputs back; formula fields and all other
+            // values on the detached calculation copy are never copied back.
+            for (Allocation_Code__c allocation : context.allocations) {
+                if (descriptorFieldMap.containsKey(allocation.Descriptor__c)) {
+                    String fieldAPI = descriptorFieldMap.get(allocation.Descriptor__c);
+                    if (descriptorTotals.containsKey(fieldAPI)) {
+                        context.policy.put(fieldAPI, descriptorTotals.get(fieldAPI));
+                    }
+                }
+            }
+            context.policy.Projected_Allocation_Cost__c = projectedTotal;
         }
     }
     
@@ -1580,7 +1712,7 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
 * but are intentionally left Pending for the scheduled noon
 * notification dispatch.
 */
-    private static void processContractNotificationEvents(
+   /* private static void processContractNotificationEvents(
         List<InsurancePolicy> newContracts,
         Map<Id, InsurancePolicy> oldContractMap
     ) {
@@ -1694,7 +1826,7 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
                 outboxRequests
             );
         
-        logContractNotificationCreationErrors(result);
+        logContractNotificationCreationErrors(result);*/
         
         /*
 * Contract and Finance notifications are intentionally
@@ -1702,14 +1834,14 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
 *
 * Successfully created outbox records remain Pending and
 * are picked up by the scheduled noon notification process.
-*/
-    }
+
+    }*/
     
     /**
 * Retrieves and validates the five supported contract
 * notification mappings.
-**/
-    private static Map<
+*/
+ /*   private static Map<
         String,
         Notification_Event_Mapping__mdt
         > getSupportedContractNotificationMappings() {
@@ -1849,13 +1981,13 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
             mapping.Target_Value__c,
             expectedTargetValue
         );
-    }
+    }*/
     
     /**
 * Determines whether a contract has at least one qualifying
 * event before customer data is queried.
 */
-    private static Boolean hasAnyQualifyingContractEvent(
+  /*  private static Boolean hasAnyQualifyingContractEvent(
         InsurancePolicy newContract,
         InsurancePolicy oldContract,
         Map<String, Notification_Event_Mapping__mdt>
@@ -1933,12 +2065,12 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
             newValue,
             mapping.Target_Value__c
         );
-    }
+    }*/
     
     /**
 * Queries customer names in one SOQL query.
 */
-    private static Map<Id, Account> queryCustomers(
+ /*   private static Map<Id, Account> queryCustomers(
         Set<Id> customerIds
     ) {
         if (
@@ -1953,12 +2085,12 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
             FROM Account
             WHERE Id IN :customerIds
         ]);
-    }
+    }*/
     
     /**
 * Creates CONTRACT_CANCELLED and CONTRACT_EXPIRED events.
 */
-    private static void addContractStatusEvents(
+/*    private static void addContractStatusEvents(
         List<NotificationOutboxService.OutboxRequest>
         outboxRequests,
         InsurancePolicy newContract,
@@ -2019,7 +2151,7 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
                 )
             );
         }
-    }
+    }*/
     
     /**
 * Creates CONTRACT_UPDATED whenever ReRate_Date__c changes,
@@ -2029,7 +2161,7 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
 * date -> different date
 * date -> null
 */
-    private static void addContractUpdatedEvent(
+ /*   private static void addContractUpdatedEvent(
         List<NotificationOutboxService.OutboxRequest>
         outboxRequests,
         InsurancePolicy newContract,
@@ -2078,12 +2210,12 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
                 eventTime
             )
         );
-    }
+    }*/
     
     /**
 * Creates FINANCE_PAST_DUE and FINANCE_CURRENT events.
 */
-    private static void addFinanceStatusEvents(
+   /* private static void addFinanceStatusEvents(
       List<NotificationOutboxService.OutboxRequest>
         outboxRequests,
         InsurancePolicy newContract,
@@ -2144,12 +2276,12 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
                 )
             );
         }
-    }
+    }*/
     
     /**
 * Builds one outbox request for one qualifying contract event.
 */
-    private static NotificationOutboxService.OutboxRequest
+ /*   private static NotificationOutboxService.OutboxRequest
         buildContractOutboxRequest(
             InsurancePolicy contractRecord,
             Account customer,
@@ -2236,11 +2368,11 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
             
             return request;
         }
-    
+    */
     /**
 * Creates the event-specific webhook JSON snapshot.
 */
-    private static String buildContractWebhookPayload(
+  /*  private static String buildContractWebhookPayload(
         InsurancePolicy contractRecord,
         Account customer,
         String eventCode,
@@ -2279,14 +2411,14 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
             );
         } else if (
             eventCode == EVENT_CONTRACT_UPDATED
-        ) {
+        ) {*/
             /*
 * Direct Map insertion is intentional.
 *
 * Unlike addAttribute(), this preserves the key even when
 * one side of the ReRate date transition is null.
 */
-            payload.attributes.put(
+  /*          payload.attributes.put(
                 'oldReRateDate',
                 oldValue
             );
@@ -2342,5 +2474,5 @@ contract.Expiration_Date_Calc__c = contract.Next_Cycle_Date_Calc__c;*/
         return String.isBlank(value)
             ? ''
             : value.trim().toUpperCase();
-    }
+    }*/
 }

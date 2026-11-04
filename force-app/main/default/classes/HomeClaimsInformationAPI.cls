@@ -56,17 +56,21 @@ global with sharing class HomeClaimsInformationAPI {
 * INDIVIDUAL CLAIM RESPONSE
 * ============================================================
 */
-    global class HomeClaimResponse {
-        
-        public String ClaimNumber;
-        public String Status;
-        public String  PaidAmount;
-        public String  ApprovedAmount;
-        public String  RequestedAmount;
-        public String LatestPaidDate;
-        public String DenialReason;
-        public String CreatedDate;
-    }
+   
+global class HomeClaimResponse {
+    public String ClaimNumber;
+    public String Status;
+    public String Complaints;
+    public String Cause;
+    public String Correction;
+    public String PaidAmount;
+    public String ApprovedAmount;
+    public String RequestedAmount;
+    public String LatestPaidDate;
+    public String DenialReason;
+    public String CreatedDate;
+}
+
     
     
     /*
@@ -275,20 +279,25 @@ try {
 * InsurancePolicy.Id
 * ----------------------------------------------------
 */
-            List<Claim> claimRecords = [
-                SELECT Id,
-                Name,
-                Status,
-                Claim_Amount_Paid__c,
-                ApprovedAmount,
-                NetClaim__c,
-                Latest_Date_Paid__c,
-                Denial_Reason__c,
-                CreatedDate
-                FROM Claim
-                WHERE PolicyNumberId = :policy.Id
-                ORDER BY CreatedDate DESC
-            ];
+           
+List<Claim> claimRecords = [
+    SELECT Id,
+           Name,
+           Status,
+           Complaints__c,
+           Cause__c,
+           Correction__c,
+           Claim_Amount_Paid__c,
+           ApprovedAmount,
+           NetClaim__c,
+           Latest_Date_Paid__c,
+           Denial_Reason__c,
+           CreatedDate
+    FROM Claim
+    WHERE PolicyNumberId = :policy.Id
+    ORDER BY CreatedDate DESC
+];
+
             /*
 * ----------------------------------------------------
 * STEP 10: Prepare Claim response list
@@ -368,6 +377,32 @@ try {
                     claimRecord.Denial_Reason__c != null
                     ? claimRecord.Denial_Reason__c
                     : '';
+
+                    
+/*
+ * Complaints
+ */
+claimResponse.Complaints =
+    claimRecord.Complaints__c != null
+    ? claimRecord.Complaints__c
+    : '';
+
+/*
+ * Cause
+ */
+claimResponse.Cause =
+    claimRecord.Cause__c != null
+    ? claimRecord.Cause__c
+    : '';
+
+/*
+ * Correction
+ */
+claimResponse.Correction =
+    claimRecord.Correction__c != null
+    ? claimRecord.Correction__c
+    : '';
+
                 
                 claimResponse.CreatedDate =
                     claimRecord.CreatedDate.format('MM-dd-yyyy');
@@ -472,65 +507,73 @@ try {
                 gen.writeStartObject();
                 
                 // 1. ClaimNumber
-                gen.writeStringField(
-                    'ClaimNumber',
-                    claimResponse.ClaimNumber != null
-                    ? claimResponse.ClaimNumber
-                    : ''
-                );
                 
-                // 2. Status
-                gen.writeStringField(
-                    'Status',
-                    claimResponse.Status != null
-                    ? claimResponse.Status
-                    : ''
-                );
-                
-                // 3. PaidAmount
-                gen.writeStringField(
-                    'PaidAmount',
-                    claimResponse.PaidAmount != null
-                    ? claimResponse.PaidAmount
-                    : '0.00'
-                );
-                
-                // 4. ApprovedAmount
-                gen.writeStringField(
-                    'ApprovedAmount',
-                    claimResponse.ApprovedAmount != null
-                    ? claimResponse.ApprovedAmount
-                    : '0.00'
-                );
-                // 5. RequestedAmount
-                gen.writeStringField(
-                    'RequestedAmount',
-                    claimResponse.RequestedAmount != null
-                    ? claimResponse.RequestedAmount
-                    : '0.00'
-                );
-                // 5. LatestPaidDate
-                gen.writeStringField(
-                    'LatestPaidDate',
-                    claimResponse.LatestPaidDate != null
-                    ? claimResponse.LatestPaidDate
-                    : ''
-                );
-                
-                // 6. DenialReason
-                gen.writeStringField(
-                    'DenialReason',
-                    claimResponse.DenialReason != null
-                    ? claimResponse.DenialReason
-                    : ''
-                );
-                // 8. CreatedDate
-                gen.writeStringField(
-                    'CreatedDate',
-                    claimResponse.CreatedDate != null
-                    ? claimResponse.CreatedDate
-                    : ''
-                );
+gen.writeStringField(
+    'ClaimNumber',
+    claimResponse.ClaimNumber != null
+        ? claimResponse.ClaimNumber : ''
+);
+
+gen.writeStringField(
+    'Status',
+    claimResponse.Status != null
+        ? claimResponse.Status : ''
+);
+
+gen.writeStringField(
+    'Complaints',
+    claimResponse.Complaints != null
+        ? claimResponse.Complaints : ''
+);
+
+gen.writeStringField(
+    'Cause',
+    claimResponse.Cause != null
+        ? claimResponse.Cause : ''
+);
+
+gen.writeStringField(
+    'Correction',
+    claimResponse.Correction != null
+        ? claimResponse.Correction : ''
+);
+
+gen.writeStringField(
+    'PaidAmount',
+    claimResponse.PaidAmount != null
+        ? claimResponse.PaidAmount : '0.00'
+);
+
+gen.writeStringField(
+    'ApprovedAmount',
+    claimResponse.ApprovedAmount != null
+        ? claimResponse.ApprovedAmount : '0.00'
+);
+
+gen.writeStringField(
+    'RequestedAmount',
+    claimResponse.RequestedAmount != null
+        ? claimResponse.RequestedAmount : '0.00'
+);
+
+gen.writeStringField(
+    'LatestPaidDate',
+    claimResponse.LatestPaidDate != null
+        ? claimResponse.LatestPaidDate : ''
+);
+
+gen.writeStringField(
+    'DenialReason',
+    claimResponse.DenialReason != null
+        ? claimResponse.DenialReason : ''
+);
+
+gen.writeStringField(
+    'CreatedDate',
+    claimResponse.CreatedDate != null
+        ? claimResponse.CreatedDate : ''
+);
+
                 
                 gen.writeEndObject();
             }
