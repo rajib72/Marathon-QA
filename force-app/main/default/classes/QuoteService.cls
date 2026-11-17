@@ -17,7 +17,9 @@ global class QuoteService {
  * Executes quote request
  * This method is invoked via an HTTP POST request.
  */
-    @HttpPost
+
+ //==========================================>commented by Joyita 6.11.26
+   @HttpPost
     global static void processQuoteRequest() {
         // Initialize response objects
         
@@ -32,72 +34,46 @@ global class QuoteService {
                 request.requestBody.toString(), QuoteService.EnduranceRequest.class
             );
 
-            clientConfig = getAutoClientConfig(requestObj.Client);
-            validateAutoClientConfig(clientConfig);
+            
+            String requestedUpToOrAddOn = requestObj.UpToorAddOn;
 
-            setup(requestObj);
-            
-            //populating the success response
-            QuoteService.ResponseGenerator successResponseObj = new QuoteService.ResponseGenerator();
-            QuoteService.Payload payload = new QuoteService.Payload();
-            List<QuoteService.Quote> quotes = new List<QuoteService.Quote>();
-            
-            successResponseObj.status = 200;
-            successResponseObj.error = '';
-            payload.VIN = vehicleMap.get('VIN');
-            payload.Vehicle_Mileage_at_Contract_Inception = Integer.valueOf(vehicleMap.get('Vehicle_Mileage_at_Contract_Inception'));
-            payload.Original_State = vehicleMap.get('Original_State');
-            payload.Option_1 = vehicleMap.get('Option_1');
-            payload.Client = vehicleMap.get('Client');
-            payload.UpToorAddOn = requestObj.UpToorAddOn;
-            //populating the quotes list
-            for(String key : responseMap.keySet()) {
-                if(responseMapList.containsKey(key)) {
-                    for(Map<String, String> innerMap : responseMapList.get(key)) {
-                        String baseReserve = innerMap.get('BaseReserve RateCost') == null ? '0' : innerMap.get('BaseReserve RateCost');
-                        String surchargeCost = responseMap.get(key).get('SurchargeCost') == null ? '0' : responseMap.get(key).get('SurchargeCost');
-                        String allocationAmount = responseMap.get(key).get('Allocation Amount') == null ? '0' : responseMap.get(key).get('Allocation Amount');
-                                            
-                        Decimal commission = 0, premiumTax = 0;
-                        if(responseMap.get(key).containsKey('Commission') && responseMap.get(key).get('Commission') == 'true' &&
-                            innerMap.containsKey('Commission RateCost') && Decimal.valueOf(innerMap.get('Commission RateCost')) > 0) {
-                            commission = Decimal.valueOf(innerMap.get('Commission RateCost'));
-                        }
-                        if(responseMap.get(key).containsKey('Premium Tax') && responseMap.get(key).get('Premium Tax') == 'true' &&
-                            innerMap.containsKey('PremiumTax RateCost') && Decimal.valueOf(innerMap.get('PremiumTax RateCost')) > 0) {
-                            premiumTax = Decimal.valueOf(innerMap.get('PremiumTax RateCost'));
-                        }
-                        
-                        Decimal netDealerCost = Decimal.valueOf(baseReserve) + 
-                            Decimal.valueOf(surchargeCost) + Decimal.valueOf(allocationAmount) + commission + premiumTax;
-                            
-                        
-                        innerMap.put('Net_Dealer_Cost', String.valueOf(netDealerCost));
-                        innerMap.put('Net_Dealer_Cost_Divide_By_12', String.valueOf((netDealerCost/12)));
-                        
-                        QuoteService.Quote quote = new QuoteService.Quote();
-                        quote.Dealer_Program_Id = key;
-                        quote.Product = responseMap.get(key).get('Product');
-                        quote.Coverage_Level = responseMap.get(key).get('CoverageLevel');
-                        quote.New_Or_Used = responseMap.get(key).get('PurchaseType');
-                        quote.Contract_Term_Months = Integer.valueOf(innerMap.get('TermMonths RateCost'));
-                        quote.Contract_Term_Mileage = Integer.valueOf(innerMap.get('TermMiles RateCost'));
-                        quote.Validation_Days = Integer.valueOf(responseMap.get(key).get('ValidationDays'));
-                        quote.Validation_Miles = Integer.valueOf(responseMap.get(key).get('ValidationMiles'));
-                        quote.Deductible = Decimal.valueOf(innerMap.get('Deductible RateCost')).setScale(2, System.RoundingMode.HALF_UP);
-                        quote.Net_Dealer_Cost = Decimal.valueOf(String.valueOf(netDealerCost)).setScale(2, System.RoundingMode.HALF_UP);
-                        quote.Net_Dealer_Cost_Divide_By_12 = Decimal.valueOf(String.valueOf((netDealerCost/12))).setScale(2, System.RoundingMode.HALF_UP);
-                        quote.Surcharges = responseMap.get(key).get('Surcharges');
-                        quote.Rate_Class = innerMap.get('RateClass RateCost');
-                        
-                        quotes.add(quote);
-                    }
-                }
+            QuoteService.ResponseGenerator successResponseObj;
+
+            if (String.isBlank(requestedUpToOrAddOn)) {
+
+                // Generate UpTo quotes first
+                QuoteService.ResponseGenerator upToResponse =
+                    generateQuoteRequest(requestObj, 'UpTo');
+
+                // Generate AddOn quotes next
+                QuoteService.ResponseGenerator addOnResponse =
+                    generateQuoteRequest(requestObj, 'AddOn');
+
+                // Combine both quote lists
+                successResponseObj = new QuoteService.ResponseGenerator();
+                successResponseObj.status = 200;
+                successResponseObj.error = '';
+                successResponseObj.payload = upToResponse.payload;
+
+                // Preserve the original API request value
+                successResponseObj.payload.UpToorAddOn =
+                    requestedUpToOrAddOn;
+
+                successResponseObj.quotes =
+                    new List<QuoteService.Quote>();
+
+                successResponseObj.quotes.addAll(upToResponse.quotes);
+                successResponseObj.quotes.addAll(addOnResponse.quotes);
+
+            } else {
+
+                // Process only the value received in the API request
+                successResponseObj =
+                    generateQuoteRequest(requestObj, requestedUpToOrAddOn);
             }
-            successResponseObj.payload = payload;
-            successResponseObj.quotes = quotes;
-            
+
             responseStr = JSON.serialize(successResponseObj);
+
         } catch (Exception e) {
             // populating the error response
             if(requestObj == null) {
@@ -109,7 +85,7 @@ global class QuoteService {
                 vehicleMap.put('Client',  string.valueOf(tempMap.get('Client')));
                 responseStr = generateErrorResponse('Bad Request. Please send request with correct data type.');
             } else if(String.isEmpty(requestObj.VIN) || String.isEmpty(String.valueOf(requestObj.Vehicle_Mileage_at_Contract_Inception)) ||
-                String.isEmpty(requestObj.Original_State) || String.isEmpty(requestObj.Client) || String.isEmpty(requestObj.UpToorAddOn)) {
+                String.isEmpty(requestObj.Original_State) || String.isEmpty(requestObj.Client)) {
                 responseStr = generateErrorResponse('Null value received for required field');
             } else {
                 responseStr = generateErrorResponse(e.getMessage());
@@ -124,6 +100,287 @@ global class QuoteService {
         }
         response.responseBody = Blob.valueOf(responseStr);
     }
+
+    private static QuoteService.ResponseGenerator generateQuoteRequest(
+        QuoteService.EnduranceRequest requestObj,
+        String upToOrAddOn
+    ) {
+        requestObj.UpToorAddOn = upToOrAddOn;
+        return calculateQuotes(requestObj);
+    }
+
+
+ /*   
+@HttpPost
+global static void processQuoteRequest() {
+
+    RestResponse response = RestContext.response;
+    EnduranceRequest requestObj;
+    String responseStr = '';
+
+    try {
+
+        requestObj = (EnduranceRequest) JSON.deserialize(
+            request.requestBody.toString(),
+            EnduranceRequest.class
+        );
+
+        ResponseGenerator successResponseObj =
+            calculateQuotes(requestObj);
+
+        responseStr = JSON.serialize(successResponseObj);
+
+    } catch (Exception e) {
+
+        if (requestObj == null) {
+
+            Map<String, Object> tempMap =
+                (Map<String, Object>) JSON.deserializeUntyped(
+                    request.requestBody.toString()
+                );
+
+            vehicleMap.put('VIN', String.valueOf(tempMap.get('VIN')));
+            vehicleMap.put(
+                'Vehicle_Mileage_at_Contract_Inception',
+                String.valueOf(
+                    tempMap.get('Vehicle_Mileage_at_Contract_Inception')
+                )
+            );
+            vehicleMap.put(
+                'Original_State',
+                String.valueOf(tempMap.get('Original_State'))
+            );
+            vehicleMap.put(
+                'Option_1',
+                String.valueOf(tempMap.get('Option_1'))
+            );
+            vehicleMap.put(
+                'Client',
+                String.valueOf(tempMap.get('Client'))
+            );
+
+            responseStr = generateErrorResponse(
+                'Bad Request. Please send request with correct data type.'
+            );
+
+        } else if (
+            String.isEmpty(requestObj.VIN) ||
+            requestObj.Vehicle_Mileage_at_Contract_Inception == null ||
+            String.isEmpty(requestObj.Original_State) ||
+            String.isEmpty(requestObj.Client) ||
+            String.isEmpty(requestObj.UpToorAddOn)
+        ) {
+
+            responseStr = generateErrorResponse(
+                'Null value received for required field'
+            );
+
+        } else {
+
+            responseStr = generateErrorResponse(e.getMessage());
+        }
+
+        QDX_LOG.error(
+            'Message*****' + e.getMessage() +
+            '@@@@@@@@@@Line Number*******' + e.getLineNumber()
+        );
+
+    } finally {
+
+        QDX_LOG.publish();
+    }
+
+    response.responseBody = Blob.valueOf(responseStr);
+}*/
+
+
+/**
+ * Shared calculation method.
+ * Executes the existing Auto Decision Matrix logic
+ * and returns the calculated quote response.
+ */
+public static ResponseGenerator calculateQuotes(
+    EnduranceRequest requestObj
+) {
+
+    if (requestObj == null) {
+        throw new QuoteConfigurationException(
+            'Quote request cannot be null.'
+        );
+    }
+
+    // Clear previous calculation data.
+    responseMap.clear();
+    responseMapList.clear();
+    vehicleMap.clear();
+    clientConfig = null;
+
+    // Existing client configuration and Decision Matrix processing.
+    clientConfig = getAutoClientConfig(requestObj.Client);
+    validateAutoClientConfig(clientConfig);
+
+    setup(requestObj);
+
+    // Build the success response.
+    ResponseGenerator successResponseObj =
+        new ResponseGenerator();
+
+    Payload payload = new Payload();
+
+    List<Quote> quotes = new List<Quote>();
+
+    successResponseObj.status = 200;
+    successResponseObj.error = '';
+
+    payload.VIN = vehicleMap.get('VIN');
+
+    payload.Vehicle_Mileage_at_Contract_Inception =
+        Integer.valueOf(
+            vehicleMap.get('Vehicle_Mileage_at_Contract_Inception')
+        );
+
+    payload.Original_State = vehicleMap.get('Original_State');
+    payload.Option_1 = vehicleMap.get('Option_1');
+    payload.Client = vehicleMap.get('Client');
+    payload.UpToorAddOn = requestObj.UpToorAddOn;
+
+    // Build the quotes from the existing Decision Matrix results.
+    for (String key : responseMap.keySet()) {
+
+        if (!responseMapList.containsKey(key)) {
+            continue;
+        }
+
+        for (Map<String, String> innerMap :
+             responseMapList.get(key)) {
+
+            String baseReserve =
+                innerMap.get('BaseReserve RateCost') == null
+                ? '0'
+                : innerMap.get('BaseReserve RateCost');
+
+            String surchargeCost =
+                responseMap.get(key).get('SurchargeCost') == null
+                ? '0'
+                : responseMap.get(key).get('SurchargeCost');
+
+            String allocationAmount =
+                responseMap.get(key).get('Allocation Amount') == null
+                ? '0'
+                : responseMap.get(key).get('Allocation Amount');
+
+            Decimal commission = 0;
+            Decimal premiumTax = 0;
+
+            if (
+                responseMap.get(key).containsKey('Commission') &&
+                responseMap.get(key).get('Commission') == 'true' &&
+                innerMap.containsKey('Commission RateCost') &&
+                Decimal.valueOf(
+                    innerMap.get('Commission RateCost')
+                ) > 0
+            ) {
+                commission = Decimal.valueOf(
+                    innerMap.get('Commission RateCost')
+                );
+            }
+
+            if (
+                responseMap.get(key).containsKey('Premium Tax') &&
+                responseMap.get(key).get('Premium Tax') == 'true' &&
+                innerMap.containsKey('PremiumTax RateCost') &&
+                Decimal.valueOf(
+                    innerMap.get('PremiumTax RateCost')
+                ) > 0
+            ) {
+                premiumTax = Decimal.valueOf(
+                    innerMap.get('PremiumTax RateCost')
+                );
+            }
+
+            Decimal netDealerCost =
+                Decimal.valueOf(baseReserve) +
+                Decimal.valueOf(surchargeCost) +
+                Decimal.valueOf(allocationAmount) +
+                commission +
+                premiumTax;
+
+            innerMap.put(
+                'Net_Dealer_Cost',
+                String.valueOf(netDealerCost)
+            );
+
+            innerMap.put(
+                'Net_Dealer_Cost_Divide_By_12',
+                String.valueOf(netDealerCost / 12)
+            );
+
+            Quote quote = new Quote();
+
+            quote.Dealer_Program_Id = key;
+            quote.Product = responseMap.get(key).get('Product');
+            quote.Coverage_Level =
+                responseMap.get(key).get('CoverageLevel');
+
+            quote.New_Or_Used =
+                responseMap.get(key).get('PurchaseType');
+
+            quote.Contract_Term_Months =
+                Integer.valueOf(
+                    innerMap.get('TermMonths RateCost')
+                );
+
+            quote.Contract_Term_Mileage =
+                Integer.valueOf(
+                    innerMap.get('TermMiles RateCost')
+                );
+
+            quote.Validation_Days =
+                Integer.valueOf(
+                    responseMap.get(key).get('ValidationDays')
+                );
+
+            quote.Validation_Miles =
+                Integer.valueOf(
+                    responseMap.get(key).get('ValidationMiles')
+                );
+
+            quote.Deductible =
+                Decimal.valueOf(
+                    innerMap.get('Deductible RateCost')
+                ).setScale(2, System.RoundingMode.HALF_UP);
+
+            quote.Net_Dealer_Cost =
+                netDealerCost.setScale(
+                    2,
+                    System.RoundingMode.HALF_UP
+                );
+
+            quote.Net_Dealer_Cost_Divide_By_12 =
+                (netDealerCost / 12).setScale(
+                    2,
+                    System.RoundingMode.HALF_UP
+                );
+
+            quote.Surcharges =
+                responseMap.get(key).get('Surcharges');
+
+            quote.Rate_Class =
+                innerMap.get('RateClass RateCost');
+
+            quotes.add(quote);
+        }
+    }
+
+    successResponseObj.payload = payload;
+    successResponseObj.quotes = quotes;
+
+    return successResponseObj;
+}
+
+
+
+
     
     public static String generateErrorResponse(String errorMessage) {
         QuoteService.ErrorResponseGenerator errorResponseObj = new QuoteService.ErrorResponseGenerator();
@@ -221,7 +478,9 @@ global class QuoteService {
         //call DM methods to populate responseMap global variable
         dealerCodeLookup(requestObj.Client);
         vehicleClassLookup();
+        //commented and added by Joyita 6.11.26
         rateCostLookup(requestObj.UpToorAddOn);
+     // rateCostLookup();
         stateSetLookup(requestObj.Client);
         surchargeSetLookup();
         callCoverageLevelDM();

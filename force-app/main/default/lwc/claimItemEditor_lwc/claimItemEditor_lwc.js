@@ -12,6 +12,7 @@ import {
     refreshTab
 } from 'lightning/platformWorkspaceApi';
 import LightningConfirm from 'lightning/confirm';
+import VendorPricingDemoModal from 'c/vendorPricingDemoModal';
 
 import CLAIM_ITEM_OBJECT from '@salesforce/schema/ClaimItem';
 import STATUS_FIELD from '@salesforce/schema/ClaimItem.Status__c';
@@ -68,6 +69,8 @@ const REASON_FALLBACK_OPTIONS = Object.freeze([
 
 export default class ClaimItemEditor_lwc extends LightningElement {
     @api recordId;
+    // Feature is OFF by default; enable only on the QA Claim record page for a controlled demo.
+    @api enablePricingDemo = false;
 
     @wire(IsConsoleNavigation)
     isConsoleNavigation;
@@ -142,6 +145,15 @@ export default class ClaimItemEditor_lwc extends LightningElement {
     selectedJobNumber = '';
 
     newRowCounter = 0;
+
+    // UI demonstration only. No API callout or pricing DML is made by this component.
+    get isVendorPricingPreviewDisabled() {
+        return !this.enablePricingDemo || this.isLoading ||
+            !this.isEditorExpanded ||
+            !this.data.some((row) =>
+                this.selectedRows.includes(row.uniqueKey) && row.Detail_Type__c === 'Part'
+            );
+    }
 
     get hasRows() {
         return this.data.length > 0;
@@ -517,6 +529,7 @@ export default class ClaimItemEditor_lwc extends LightningElement {
             JobNumberReadOnlyClass: row.Job_Number__cError
                 ? 'read-only-field job-number-field read-only-field_error'
                 : 'read-only-field job-number-field',
+            isPricingPartRow: row.Detail_Type__c === 'Part',
             rowClass: row.isSelected
                 ? 'claim-item-record selected-row'
                 : 'claim-item-record'
@@ -990,6 +1003,57 @@ if (
         });
 
         this.markDirty();
+    }
+
+    async handleOpenVendorPricingForSelection() {
+        const selected = this.data.filter((row) =>
+            this.selectedRows.includes(row.uniqueKey)
+        );
+        const parts = selected.filter((row) => row.Detail_Type__c === 'Part');
+        if (!parts.length) {
+            this.showToast('Select a Part', 'Select at least one Part Claim Item.', 'info');
+            return;
+        }
+        if (parts.length !== selected.length) {
+            this.showToast('Parts only',
+                'Non-Part lines are excluded from this Parts Pricing preview.', 'info');
+        }
+        await this.openVendorPricingDemo(parts);
+    }
+
+    async handleOpenVendorPricingForRow(event) {
+        const key = event.currentTarget.dataset.id;
+        const row = this.data.find((item) => item.uniqueKey === key);
+        if (!row || row.Detail_Type__c !== 'Part') return;
+        await this.openVendorPricingDemo([row]);
+    }
+
+    async openVendorPricingDemo(rows) {
+        if (!this.enablePricingDemo || this.isLoading || !rows || !rows.length) return;
+        // Only a safe snapshot of draft values crosses into the modal.
+        // Selected example quotes never flow back into this.data or saveClaimItems().
+        const selectedLines = rows.map((row) => ({
+            rowKey: String(row.uniqueKey),
+            claimItemId: row.Id || null,
+            jobNumber: String(row.Job_Number__c || ''),
+            detailType: row.Detail_Type__c,
+            partNumber: row.Part_Number__c || '',
+            adjustedQuantity: row.Quantity__c,
+            lossComponentName: row.CoverageLevelDetailName || '',
+            description: row.Description || '',
+            isUnsaved: !row.Id
+        }));
+        try {
+            await VendorPricingDemoModal.open({
+                label: 'Parts Pricing Comparison — Demonstration',
+                size: 'large',
+                selectedLines
+            });
+        } catch (error) {
+            // An unavailable modal must not interrupt the editor's normal behavior.
+            this.showToast('Pricing preview unavailable',
+                error?.message || 'Unable to open the pricing preview.', 'error');
+        }
     }
 
     handleRowSelection(event) {

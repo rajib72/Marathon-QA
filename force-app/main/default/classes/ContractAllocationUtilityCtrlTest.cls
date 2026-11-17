@@ -61,7 +61,32 @@ private class ContractAllocationUtilityCtrlTest {
 
         // Allocation_Code__c.Client__c has a required lookup filter:
         // Account Record Type DeveloperName must equal Selling_Agency.
-        ctx.client.RecordTypeId = getSellingAgencyAccountRecordTypeId();
+        // Production Account automation also requires an explicit RecordTypeId
+        // for the Lien Holder and Payee test accounts. Without these values,
+        // the bulk Account insert fails on row 1 (the Lien Holder).
+        // Prefer the corresponding available Account record type for each role;
+        // fall back to the known Selling_Agency type when a matching type is
+        // not configured in the target org. Never hardcode environment IDs.
+        Id sellingAgencyRecordTypeId = getSellingAgencyAccountRecordTypeId();
+        ctx.client.RecordTypeId = sellingAgencyRecordTypeId;
+
+        Id lienHolderRecordTypeId = findMatchingAccountRecordTypeId(
+            getAccountRoleCandidates('lienholder')
+        );
+        ctx.lienHolder.RecordTypeId = lienHolderRecordTypeId != null
+            ? lienHolderRecordTypeId
+            : sellingAgencyRecordTypeId;
+
+        Id payeeRecordTypeId = findMatchingAccountRecordTypeId(
+            getAccountRoleCandidates('payee')
+        );
+        ctx.payee.RecordTypeId = payeeRecordTypeId != null
+            ? payeeRecordTypeId
+            : sellingAgencyRecordTypeId;
+
+        System.assertNotEquals(null, ctx.client.RecordTypeId);
+        System.assertNotEquals(null, ctx.lienHolder.RecordTypeId);
+        System.assertNotEquals(null, ctx.payee.RecordTypeId);
 
         populateRequiredPrimitiveFields(ctx.client, null);
         populateRequiredPrimitiveFields(ctx.lienHolder, null);
@@ -1103,6 +1128,24 @@ private class ContractAllocationUtilityCtrlTest {
     }
 
     @IsTest
+    static void testFundingBatchContextLifecycle() {
+        // The batch sets job context per Contract and must clear it afterward.
+        // Tracking state is independent of financial allocation calculations.
+        System.assertEquals(null,
+            ContractAllocationUtilityCtrl.fundingBatchJobContext);
+
+        Id sampleId = UserInfo.getUserId();
+        ContractAllocationUtilityCtrl.setFundingBatchJobContext(sampleId);
+        System.assertEquals(sampleId,
+            ContractAllocationUtilityCtrl.fundingBatchJobContext);
+
+        ContractAllocationUtilityCtrl.clearFundingBatchJobContext();
+        System.assertEquals(null,
+            ContractAllocationUtilityCtrl.fundingBatchJobContext,
+            'Job context must never leak between Contract executions.');
+    }
+
+    @IsTest
     static void testCalculateMaxAllocationAndSupplementalValues() {
         InsurancePolicy policy = new InsurancePolicy(
             Reserve__c = 77.77,
@@ -1193,8 +1236,10 @@ private class ContractAllocationUtilityCtrlTest {
             )
         );
 
-        System.assertEquals(
-            0,
+        // Malformed formula is now an explicit financial validation failure.
+        // Do NOT expect a silent zero: this exception is required for rollback.
+        Boolean malformedFormulaRejected = false;
+        try {
             ContractAllocationUtilityCtrl.calculateMaxAllocation(
                 policy,
                 new Allocation_Code__c(
@@ -1202,8 +1247,14 @@ private class ContractAllocationUtilityCtrlTest {
                     Allocation_Amount__c = 'Not_A_Field__c +',
                     Descriptor__c = 'Formula'
                 )
-            )
-        );
+            );
+        } catch (Exception ex) {
+            malformedFormulaRejected = true;
+            System.assert(String.isNotBlank(ex.getMessage()),
+                'Malformed formulas must report why calculation failed.');
+        }
+        System.assert(malformedFormulaRejected,
+            'Invalid formulas must throw to trigger Contract-level rollback.');
 
         System.assertEquals(
             0,

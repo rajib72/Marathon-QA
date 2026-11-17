@@ -94,24 +94,7 @@ if(!Test.isRunningTest()) {
                         
                         
                         
-String termMonths = rateRow.get('TermMonths');
-String productName = responseMap.get(key).get('Product');
 
-if (
-    !clientConfig.Allow_12_Month_Quotes__c &&
-    termMonths == '12' &&
-    (productName == null ||
-     !productName.toUpperCase().contains('M2M'))
-) {
-    System.debug(
-        'Skipping 12-month quote for client = '
-        + req.Client
-        + ', Product = '
-        + productName
-    );
-
-    continue;
-}
 
                         
                         // Set contract term based on M2M configuration or client default term.
@@ -418,6 +401,16 @@ public static List<HWQuote> getQuotesForInternalRequest(
                  quote.Product.equalsIgnoreCase(product))) {
                 filteredQuotes.add(quote);
             }
+        }
+//added by Joyita Sarkar 10.11.26
+        System.debug('Selected Product = [' + product + ']');
+        System.debug('Returned Home Quotes = ' + responseData.quotes.size());
+
+        for (HWQuote quote : responseData.quotes) {
+            System.debug(
+                'Dealer Program = ' + quote.DealerProgramId +
+                ', Returned Product = [' + quote.Product + ']'
+            );
         }
 
         if (filteredQuotes.isEmpty()) {

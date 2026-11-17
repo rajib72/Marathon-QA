@@ -1,0 +1,121 @@
+<template>
+    <lightning-card title="Internal Quote Results" icon-name="standard:quotes">
+
+        <div class="slds-p-around_medium">
+
+            <!-- REQUEST DETAILS -->
+            <template if:true={hasRequest}>
+                <div class="request-section slds-m-bottom_large">
+                    <h2 class="section-heading">Request Details</h2>
+
+                    <div class="slds-grid slds-wrap slds-gutters">
+
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                            <p class="field-label">Quote Type</p>
+                            <p>{request.quoteType}</p>
+                        </div>
+
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                            <p class="field-label">Client</p>
+                            <p>{request.client}</p>
+                        </div>
+
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                            <p class="field-label">Product</p>
+                            <p>{request.product}</p>
+                        </div>
+
+                        <template if:true={isAuto}>
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                                <p class="field-label">VIN</p>
+                                <p>{request.vin}</p>
+                            </div>
+
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                                <p class="field-label">Sale Odometer</p>
+                                <p>{request.saleOdometer}</p>
+                            </div>
+                        </template>
+
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                            <p class="field-label">State</p>
+                            <p>{request.state}</p>
+                        </div>
+
+                        <template if:true={hasOptions}>
+                            <div class="slds-col slds-size_1-of-1">
+                                <p class="field-label">Selected Options</p>
+                                <p>{optionsDisplay}</p>
+                            </div>
+                        </template>
+
+                        <template if:true={isHome}>
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                                <p class="field-label">Residence Type</p>
+                                <p>{request.residenceType}</p>
+                            </div>
+                        </template>
+
+                    </div>
+                </div>
+            </template>
+
+            <!-- RESULTS SUMMARY -->
+            <div class="results-header slds-m-bottom_medium">
+                <h2 class="section-heading">Quote Results</h2>
+
+                <template if:true={hasQuotes}>
+                    <span class="result-count">
+                        Total Quotes: {quoteCount}
+                    </span>
+                </template>
+            </div>
+
+            <!-- LOADING -->
+            <template if:true={isLoading}>
+                <lightning-spinner
+                    alternative-text="Loading quote results"
+                    size="medium">
+                </lightning-spinner>
+            </template>
+
+            <!-- ERROR -->
+            <template if:true={errorMessage}>
+                <div class="slds-notify slds-notify_alert slds-alert_error"
+                     role="alert">
+                    <span class="slds-assistive-text">Error</span>
+                    <h2>{errorMessage}</h2>
+                </div>
+            </template>
+
+            <!-- QUOTE TABLE -->
+            <template if:true={hasQuotes}>
+                <div class="table-container">
+                    <lightning-datatable
+                        key-field="rowKey"
+                        data={quotes}
+                        columns={columns}
+                        hide-checkbox-column
+                        show-row-number-column>
+                    </lightning-datatable>
+                </div>
+            </template>
+
+            <!-- NO RESULTS -->
+            <template if:true={showNoResults}>
+                <div class="empty-state">
+                    <lightning-icon
+                        icon-name="utility:info"
+                        size="medium"
+                        alternative-text="Information">
+                    </lightning-icon>
+
+                    <p class="slds-m-top_small">
+                        No quotes were returned for the submitted request.
+                    </p>
+                </div>
+            </template>
+
+        </div>
+    </lightning-card>
+</template>

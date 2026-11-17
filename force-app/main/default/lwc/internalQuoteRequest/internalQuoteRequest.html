@@ -113,6 +113,28 @@
 
                 </div>
 
+                 <!-- =================================================
+                     STATE
+                     ================================================= -->
+
+                <div class="form-field">
+
+                    <label class="required-label">
+                        State
+                        <span class="required-star">*</span>
+                    </label>
+
+                    <lightning-combobox
+                        name="state"
+                        value={state}
+                        options={stateOptions}
+                        placeholder="Select State"
+                        onchange={handleStateChange}
+                        >
+                    </lightning-combobox>
+
+                </div>
+
 
                 <!-- =================================================
                      SALE ODOMETER
@@ -138,27 +160,7 @@
 
 
 
-                <!-- =================================================
-                     STATE
-                     ================================================= -->
-
-                <div class="form-field">
-
-                    <label class="required-label">
-                        State
-                        <span class="required-star">*</span>
-                    </label>
-
-                    <lightning-combobox
-                        name="state"
-                        value={state}
-                        options={stateOptions}
-                        placeholder="Select State"
-                        onchange={handleStateChange}
-                        >
-                    </lightning-combobox>
-
-                </div>
+               
 
 
                 <!-- =================================================
@@ -183,6 +185,33 @@
                             </lightning-input>
                         </div>
                     </template>
+
+
+
+                     <!-- =================================================
+                        RESIDENCE TYPE
+                        Display only for Home Warranty
+                        ================================================= -->
+
+                   
+                <!-- RESIDENCE TYPE: Home Warranty only -->
+
+                <template if:true={isHomeWarranty}>
+                    <div class="form-field">
+                    <label class="required-label">
+                            Residence Type
+                            <span class="required-star">*</span>
+                        </label>
+
+                        <lightning-combobox
+                            name="residenceType"
+                            value={residenceType}
+                            options={residenceTypeOptions}
+                            placeholder="Select Residence Type"
+                            onchange={handleResidenceTypeChange}>
+                        </lightning-combobox>
+                    </div>
+                </template>
 
 
 
@@ -260,30 +289,7 @@
 
                     </div>
 
-                    <!-- =================================================
-                        RESIDENCE TYPE
-                        Display only for Home Warranty
-                        ================================================= -->
-
                    
-                <!-- RESIDENCE TYPE: Home Warranty only -->
-
-                <template if:true={isHomeWarranty}>
-                    <div class="form-field">
-                    <label class="required-label">
-                            Residence Type
-                            <span class="required-star">*</span>
-                        </label>
-
-                        <lightning-combobox
-                            name="residenceType"
-                            value={residenceType}
-                            options={residenceTypeOptions}
-                            placeholder="Select Residence Type"
-                            onchange={handleResidenceTypeChange}>
-                        </lightning-combobox>
-                    </div>
-                </template>
 
 
                 </div>

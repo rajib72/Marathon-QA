@@ -98,7 +98,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 28px;
     row-gap: 20px;
-    padding: 24px 22px;
+    padding: 12px ;
 }
 
 
@@ -256,7 +256,7 @@
     .form-body {
         grid-template-columns: 1fr;
         gap: 18px;
-        padding: 18px;
+        padding: 12px ;
     }
 
     .header-content {
@@ -267,4 +267,34 @@
         padding: 14px 18px;
     }
 
+}
+
+/* Reduce gap between field labels and Salesforce dropdowns */
+.form-field lightning-combobox {
+    display: block;
+    margin-top: -12px;
+}
+
+/* Reduce gap for text inputs as well */
+.form-field lightning-input {
+    display: block;
+    margin-top: -12px;
+}
+
+.form-field label {
+    display: block;
+    margin-bottom: 6px;
+    line-height: 20px;
+}
+
+.form-field lightning-combobox {
+    display: block;
+}
+
+.multi-select-container {
+    margin-top: 0;
+}
+
+.multi-select-button {
+    min-height: 34px;
 }

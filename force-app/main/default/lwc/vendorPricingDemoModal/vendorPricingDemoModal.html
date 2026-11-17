@@ -1,0 +1,159 @@
+<template>
+    <lightning-modal-header label="Parts Pricing Comparison"></lightning-modal-header>
+
+    <lightning-modal-body>
+        <p class="modal-intro">Compare quotes and preview an adjuster selection</p>
+        <div class="demo-banner" role="note">
+            <lightning-icon icon-name="utility:info" size="x-small" alternative-text="Information"></lightning-icon>
+            <div>
+                <strong>Client UI demonstration — SAMPLE DATA ONLY</strong>
+                <div>No vendor APIs are connected. Prices, delivery, availability, and warranty below are illustrative. No Claim Item values are changed or saved.</div>
+            </div>
+        </div>
+
+        <section class="demo-context" aria-label="Selected Claim Item">
+            <div class="section-heading">
+                <h3>Selected Claim Item</h3>
+                <span class="section-note">Current editor values, including unsaved draft changes</span>
+            </div>
+            <template lwc:if={hasMultipleLines}>
+                <lightning-combobox
+                    label="Choose a Part line"
+                    value={selectedRowKey}
+                    options={lineOptions}
+                    onchange={handleLineChange}>
+                </lightning-combobox>
+            </template>
+            <div class="context-grid">
+                <div><span class="kicker">Job</span><strong>{displayJob}</strong></div>
+                <div><span class="kicker">Part Number</span><strong>{displayPartNumber}</strong></div>
+                <div><span class="kicker">Loss Component</span><strong>{displayComponent}</strong></div>
+                <div><span class="kicker">Adjusted Qty</span><strong>{displayQuantity}</strong></div>
+            </div>
+            <div class="action-line">
+                <span class="search-basis">Search using: <strong>{searchBasis}</strong></span>
+                <lightning-button
+                    label="Show Sample Vendor Quotes"
+                    icon-name="utility:search"
+                    variant="brand"
+                    onclick={handleGenerate}
+                    disabled={isGenerateDisabled}>
+                </lightning-button>
+            </div>
+            <template lwc:if={isGenerateDisabled}>
+                <div class="demo-errors" role="status">
+                    <strong>Complete these Part details to preview pricing:</strong>
+                    <ul>
+                        <template for:each={validationMessages} for:item="message">
+                            <li key={message}>{message}</li>
+                        </template>
+                    </ul>
+                </div>
+            </template>
+            <p class="disclaimer-small">VIN, current mileage, and Repair Shop address checks will run in the upcoming backend validation service. Their completeness is not verified in this demo.</p>
+        </section>
+
+        <template lwc:if={hasQuotes}>
+            <section class="demo-results" aria-label="Illustrative vendor quotes">
+                <div class="section-heading">
+                    <h3>Illustrative Vendor Quotes <span class="result-count">({quotes.length})</span></h3>
+                    <lightning-button label="Clear Comparison" variant="base" onclick={handleReset}></lightning-button>
+                </div>
+                <p class="comparison-rule">Lowest price uses <strong>unit price × Adjusted Quantity</strong>; sample shipping is excluded from that comparison. Vendor Total Price is shown separately.</p>
+                <div class="quote-grid">
+                    <template for:each={quotesForDisplay} for:item="quote">
+                        <article key={quote.id} class={quote.cardClass}>
+                            <div class="quote-header">
+                                <div>
+                                    <strong>{quote.vendorName}</strong>
+                                    <div class="quote-catalog">{quote.catalog}</div>
+                                </div>
+                                <template lwc:if={quote.isLowest}>
+                                    <span class="best-price-tag">Lowest comparable</span>
+                                </template>
+                            </div>
+                            <div class="quote-amount">
+                                <span class="kicker">Comparable Price</span>
+                                <strong>
+                                    <lightning-formatted-number value={quote.comparisonAmount} format-style="currency" currency-code="USD"></lightning-formatted-number>
+                                </strong>
+                                <div class="quote-math">
+                                    <lightning-formatted-number value={quote.unitPrice} format-style="currency" currency-code="USD"></lightning-formatted-number>
+                                    <span> per unit × {quote.quantity}</span>
+                                </div>
+                            </div>
+                            <div class="quote-secondary">
+                                <div><span>Sample shipping</span><strong><lightning-formatted-number value={quote.shipping} format-style="currency" currency-code="USD"></lightning-formatted-number></strong></div>
+                                <div><span>Sample Total Price</span><strong><lightning-formatted-number value={quote.vendorTotalPrice} format-style="currency" currency-code="USD"></lightning-formatted-number></strong></div>
+                                <div><span>Availability</span><strong>{quote.availability}</strong></div>
+                                <div><span>Delivery</span><strong>{quote.delivery}</strong></div>
+                                <div><span>Warranty</span><strong>{quote.warranty}</strong></div>
+                            </div>
+                            <div class="quote-footer">
+                                <span class="sample-reference">{quote.reference}</span>
+                                <lightning-button
+                                    label={quote.selectLabel}
+                                    variant={quote.selectVariant}
+                                    data-quote-id={quote.id}
+                                    onclick={handleSelectQuote}>
+                                </lightning-button>
+                            </div>
+                        </article>
+                    </template>
+                </div>
+            </section>
+        </template>
+        <template lwc:elseif={hasGenerated}>
+            <div class="demo-empty">No sample quotes are available for this example.</div>
+        </template>
+        <template lwc:else>
+            <div class="demo-empty">
+                <lightning-icon icon-name="utility:search" alternative-text="Search" size="small"></lightning-icon>
+                <p>Choose <strong>Show Sample Vendor Quotes</strong> to see the comparison experience.</p>
+            </div>
+        </template>
+
+        <template lwc:if={hasSelection}>
+            <section class="selection-preview" aria-label="Quote application preview">
+                <div class="section-heading"><h3>Selected Quote — Application Preview</h3><span class="preview-pill">Not applied</span></div>
+                <p><strong>{selectedVendor}</strong> · {selectedCatalog}. In the completed integration, selecting this quotation will populate Adjusted Rate with the vendor-returned <strong>Total Price</strong>, not Unit Price × Quantity a second time.</p>
+                <div class="preview-grid">
+                    <div>
+                        <span class="kicker">Vendor Total Price</span>
+                        <strong class="preview-total"><lightning-formatted-number value={chosenVendorTotal} format-style="currency" currency-code="USD"></lightning-formatted-number></strong>
+                    </div>
+                    <div>
+                        <lightning-input
+                            type="number"
+                            label="Manual Adjusted Rate Override (demo only)"
+                            step="0.01"
+                            min="0"
+                            value={manualOverride}
+                            onchange={handleOverrideChange}>
+                        </lightning-input>
+                    </div>
+                    <div>
+                        <span class="kicker">Adjusted Rate Preview</span>
+                        <strong class="preview-total"><lightning-formatted-number value={previewAdjustedRate} format-style="currency" currency-code="USD"></lightning-formatted-number></strong>
+                    </div>
+                </div>
+                <template lwc:if={hasOverride}>
+                    <div class="override-note">Manual override shown locally only. Original sample vendor Total Price is preserved for comparison.</div>
+                    <lightning-button label="Reset Override" variant="base" onclick={handleResetOverride}></lightning-button>
+                </template>
+                <template lwc:if={hasValidOverride}>
+                    <p class="disclaimer-small">Claim Item Rate, Payee, tax, Net Claim and all saved records remain unchanged.</p>
+                </template>
+                <template lwc:else>
+                    <p class="demo-errors">Override must be a non-negative amount.</p>
+                </template>
+            </section>
+        </template>
+    </lightning-modal-body>
+    <lightning-modal-footer>
+        <div class="footer-content">
+            <span>Pricing integration and quote application are pending backend completion.</span>
+            <lightning-button label="Close Preview" onclick={handleClose} variant="brand"></lightning-button>
+        </div>
+    </lightning-modal-footer>
+</template>

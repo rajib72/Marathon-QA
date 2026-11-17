@@ -130,6 +130,7 @@ implements Database.Batchable<sObject>, Database.Stateful {
     
     
     @TestVisible private Integer iterationCount          = 0;
+    @TestVisible private Boolean hadLockConflict = false;
     
     
     // ── Custom exception ──────────────────────────────────────────────────
@@ -210,24 +211,116 @@ implements Database.Batchable<sObject>, Database.Stateful {
 * Processes each batch of InsurancePolicy records.
 * The contract count is incremented only on successful execution.
 */
+    /**
+     * QA candidate: batch scope stays 3 Contracts; one savepoint per Contract.
+     * A catchable error in Contract B does NOT undo Contract A's already staged
+     * successful work in this execute transaction.
+     *
+     * Lock-first, then refresh. Two overlapping batch jobs can receive stale
+     * QueryLocator scopes but only one can work on a Contract at a time.
+     */
     public void execute(Database.BatchableContext bc, List<InsurancePolicy> insPolicyList) {
-        try {
-            if (!insPolicyList.isEmpty()) {
-                ContractAllocationUtilityCtrl.splitContractsByClient(insPolicyList);
-                // Increment only after successful execution, not before.
-                //    If splitContractsByClient throws, we do not count these records.
-                processedContractsCount += insPolicyList.size();
+        if (insPolicyList == null || insPolicyList.isEmpty()) return;
+
+        Set<Id> uniqueIds = new Set<Id>();
+        for (InsurancePolicy inputContract : insPolicyList) {
+            if (inputContract != null && inputContract.Id != null) {
+                uniqueIds.add(inputContract.Id);
             }
-        } catch (Exception e) {
-            // Use consistent lowercase 'bc' — Apex is case-insensitive but
-            //    convention requires camelCase local variables throughout.
-            QDX_Log.publishLog(
-                UtilityClass.formatBatchErrorMessage(e, bc.getJobId()),
-                'BatchContractAllocation', 'ERROR', bc.getJobId()
-            );
+        }
+        List<Id> orderedIds = new List<Id>(uniqueIds);
+        orderedIds.sort();
+
+        for (Id contractId : orderedIds) {
+            Savepoint contractSp = Database.setSavepoint();
+            try {
+                // Serializes BOTH distinct Funding records and overlapping jobs
+                // against the same parent Contract. No ORDER BY with FOR UPDATE.
+                List<InsurancePolicy> locked = [
+                    SELECT Id FROM InsurancePolicy
+                    WHERE Id = :contractId FOR UPDATE
+                ];
+                if (locked.size() != 1) {
+                    throw new OtherException('Contract lock/lookup failed: ' + contractId);
+                }
+
+                // The start() QueryLocator can be stale. Always re-check pending
+                // Funding after holding the parent lock, never use snapshot data.
+                List<Funding__c> pending = [
+                    SELECT Id, Time_Processed__c, Funded_Amount__c
+                    FROM Funding__c
+                    WHERE Contract__c = :contractId
+                    AND Time_Processed__c = null
+                    AND Funded_Amount__c != null
+                    AND Funded_Amount__c != 0
+                    FOR UPDATE
+                ];
+                if (pending.isEmpty()) {
+                    // This Contract may have been processed by the other job.
+                    continue;
+                }
+
+                Set<Id> pendingIds = new Set<Id>();
+                for (Funding__c f : pending) pendingIds.add(f.Id);
+
+                // Requery all original finance fields under the lock.
+                String queryText = 'SELECT ' + INS_POLICY_FIELDS
+                    + ' FROM InsurancePolicy WHERE Id = :contractId';
+                List<InsurancePolicy> currentContracts = Database.query(queryText);
+                if (currentContracts.size() != 1) {
+                    throw new OtherException('Contract refresh failed: ' + contractId);
+                }
+
+                // Reuse the ORIGINAL financial routing/formulas, but only one
+                // Contract at a time. Errors must propagate from utility methods.
+                ContractAllocationUtilityCtrl.setFundingBatchJobContext(bc.getJobId());
+                try {
+                    ContractAllocationUtilityCtrl.splitContractsByClient(currentContracts);
+                } finally {
+                    ContractAllocationUtilityCtrl.clearFundingBatchJobContext();
+                }
+
+                // Reject a swallowed error or partially successful operation.
+                // All nonzero pending Funding on THIS Contract must complete
+                // together, or this Contract alone is rolled back.
+                Integer unfinished = [
+                    SELECT COUNT() FROM Funding__c
+                    WHERE Id IN :pendingIds AND Time_Processed__c = null
+                ];
+                if (unfinished != 0) {
+                    throw new OtherException(
+                        'Incomplete Funding allocation for Contract ' + contractId
+                        + '; unprocessed Funding records=' + unfinished
+                    );
+                }
+
+                processedContractsCount++;
+            } catch (Exception e) {
+                Database.rollback(contractSp);
+                // Catchable errors are isolated to THIS Contract. Never throw
+                // here, as the other Contracts still need to finish.
+                String msg = e.getMessage() == null ? '' : e.getMessage().toLowerCase();
+                if (msg.contains('unable_to_lock_row') ||
+                    msg.contains('unable to lock row') ||
+                    msg.contains('unable to obtain exclusive access')) {
+                    hadLockConflict = true;
+                }
+                try {
+                    QDX_Log.publishLog(
+                        'Contract=' + contractId + ' | ' +
+                        UtilityClass.formatBatchErrorMessage(e, bc.getJobId()),
+                        'BatchContractAllocation', 'ERROR', bc.getJobId()
+                    );
+                } catch (Exception logError) {
+                    System.debug(LoggingLevel.ERROR,
+                        'Funding Contract=' + contractId +
+                        ' | failed: ' + e.getMessage() +
+                        ' | logging failed: ' + logError.getMessage());
+                }
+            }
         }
     }
-    
+
     // ─────────────────────────────────────────────────────────────────────
     /**
 * Determines whether to self-chain, stop, or hand off to BatchRopAllocation.
@@ -299,7 +392,16 @@ implements Database.Batchable<sObject>, Database.Stateful {
             return; // do NOT launch BatchRopAllocation until all funding is done
         }
         
-        // All funding processed (or single-mode run complete) — hand off.
+        // Never hand off to ROP while ANY Funding is still pending.
+        // The old fallthrough could start ROP when every Funding contract failed.
+        if (remainingUnprocessed > 0) {
+            QDX_LOG.error('Pending Funding remains (' + remainingUnprocessed +
+                '). ROP handoff deferred; investigate failing Funding Contracts.');
+            QDX_LOG.publish();
+            return;
+        }
+
+        // Only all-Funding-complete runs can hand off.
         if (Test.isRunningTest()) { return; }
         
         List<AsyncApexJob> runningRopJobs = [

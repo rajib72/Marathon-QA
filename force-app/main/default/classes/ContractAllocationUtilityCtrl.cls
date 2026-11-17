@@ -5,6 +5,23 @@
 * @description: This class manages the allocation of contracts based on insurance policies, dealing with various aspects like fetching and assigning priorities, and handling financial distributions accordingly.
 */
 public with sharing class ContractAllocationUtilityCtrl {
+    // QA trace context. Null for legacy/direct callers; no financial effect.
+    @TestVisible private static Id fundingBatchJobContext;
+    public static void setFundingBatchJobContext(Id jobId) {
+        fundingBatchJobContext = jobId;
+    }
+    public static void clearFundingBatchJobContext() {
+        fundingBatchJobContext = null;
+    }
+    private static void stampFundingAllocationResult(Funding__c funding) {
+        if (funding == null) return;
+        funding.Funding_Allocation_Status__c = 'Processed';
+        if (fundingBatchJobContext != null) {
+            funding.Funding_Allocation_Batch_Job_Id__c =
+                String.valueOf(fundingBatchJobContext);
+        }
+    }
+
     
     // Test-only metadata seams. These remain null in production and therefore
     // do not alter production behavior.
@@ -554,9 +571,11 @@ public with sharing class ContractAllocationUtilityCtrl {
                         if(totalSpendAmount >= each.Funded_Amount__c){
                             totalSpendAmount -= each.Funded_Amount__c;
                             each.Time_Processed__c = System.now();
+                            stampFundingAllocationResult(each);
                             fundsTobeUpdated.add(each);
                         }else if(totalSpendAmount < each.Funded_Amount__c){
                             each.Time_Processed__c = System.now();
+                            stampFundingAllocationResult(each);
                             fundsTobeUpdated.add(each);
                             break;
                         }                    
@@ -581,6 +600,7 @@ public with sharing class ContractAllocationUtilityCtrl {
         }catch(Exception e){
             QDX_Log.error('Exception Occurred: ' +e.getMessage()+ 'Line Number: '+e.getLineNumber());
             QDX_Log.publish();
+            throw e;
         }
     }
     
@@ -714,6 +734,7 @@ public with sharing class ContractAllocationUtilityCtrl {
             }
         } catch(Exception e) {
             QDX_LOG.error('Message*****'+e.getMessage()+'@@@@@@@@@@Line Number*******'+e.getLineNumber());
+            throw e; // Propagate failure for Contract-level rollback.
         } finally {
             QDX_LOG.publish();
         }
@@ -753,6 +774,7 @@ public with sharing class ContractAllocationUtilityCtrl {
         } catch (Exception e) {
             // Log error details including message and line number
             QDX_LOG.error('Error in distributeFundingToContracts - Message: ' + e.getMessage() + ', Line Number: ' + e.getLineNumber());
+            throw e;
         } finally {
             // Publish logs for tracking and debugging
             QDX_LOG.publish();
@@ -921,6 +943,7 @@ public with sharing class ContractAllocationUtilityCtrl {
             // Log error details including message and line number
             QDX_LOG.error('Error in populateAllocationCodeMaps - Message: ' + e.getMessage() +
                           ', Line Number: ' + e.getLineNumber());
+            throw e;
         } finally {
             // Ensure logs are always published
             QDX_LOG.publish();
@@ -979,19 +1002,21 @@ public with sharing class ContractAllocationUtilityCtrl {
             } catch (Exception formulaException) {
                 QDX_LOG.error('Formula evaluation failed: ' + formulaException.getMessage() +
                               ' at line ' + formulaException.getLineNumber());
+                throw formulaException;
             }
             
         } catch (Exception e) {
             // Log error details
             QDX_LOG.error('Error in calculateMaxAllocation - Message: ' + e.getMessage() +
                           ', Line Number: ' + e.getLineNumber());
+            throw e;
         } finally {
             // Ensure logs are always published
             QDX_LOG.publish();
         }
         
         // Default return value in case of any failure
-        return 0;
+        //return 0;
     }
     
     /**
@@ -1032,6 +1057,7 @@ public with sharing class ContractAllocationUtilityCtrl {
             // Log error details
             QDX_LOG.error('Error in getSupplementalValue - Message: ' + e.getMessage() +
                           ', Line Number: ' + e.getLineNumber());
+            throw e;
         } finally {
             // Ensure logs are always published
             QDX_LOG.publish();
@@ -1183,6 +1209,7 @@ public with sharing class ContractAllocationUtilityCtrl {
                 ', Line Number: ' +
                 e.getLineNumber()
             );
+            throw e;
         } finally {
             QDX_LOG.publish();
         }
@@ -2389,6 +2416,7 @@ latestROPByContractId.put(rop.Contract__c, rop);
                         // =====================================================
                         
                         funding.Time_Processed__c = System.now();
+                        stampFundingAllocationResult(funding);
                         
                         fundingRecordsToUpdate.add(funding);
                         
@@ -2752,6 +2780,7 @@ ropHandledContracts.add(contractId);
                         // After all allocations & calculations succeed
                         if (allocationsToInsert.size() > 0 || funding.Funded_Amount__c != 0) {
                             funding.Time_Processed__c = System.now();
+                            stampFundingAllocationResult(funding);
                             fundingRecordsToUpdate.add(funding);
                             
                             InsurancePolicy updateContract = contractsToUpdateMap.containsKey(contractId)
@@ -2784,6 +2813,7 @@ ropHandledContracts.add(contractId);
                         ' Line=' +
                         rop.getLineNumber()
                     );
+                    throw rop;
                 }
             }
             
@@ -2791,14 +2821,14 @@ ropHandledContracts.add(contractId);
 if (!fundingRecordsToUpdate.isEmpty()){
     Database.update(
         fundingRecordsToUpdate,
-        false
+        true
     );
 }
 
 if (!allocationsToInsert.isEmpty()){
     Database.insert(
         allocationsToInsert,
-        false
+        true
     );
 }
 
@@ -2823,13 +2853,14 @@ reconcileFundedReservePack(
 if (!contractsToUpdateMap.isEmpty()){
     Database.update(
         contractsToUpdateMap.values(),
-        false
+        true
     );
 }
             
         } catch (Exception e) {
             QDX_LOG.error('Error in processFundingRecords - ' + e.getMessage() +
                           ', Line: ' + e.getLineNumber());
+            throw e;
         } finally {
             QDX_LOG.publish();
         }

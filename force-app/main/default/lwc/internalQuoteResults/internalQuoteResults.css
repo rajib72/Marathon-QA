@@ -1,0 +1,211 @@
+/* ==========================================
+   MAIN CONTAINER
+========================================== */
+
+:host {
+    display: block;
+    width: 100%;
+    --section-border: #dddbda;
+    --primary-color: #0176d3;
+    --heading-color: #181818;
+    --label-color: #706e6b;
+}
+
+lightning-card {
+    display: block;
+}
+
+/* ==========================================
+   REQUEST DETAILS SECTION
+========================================== */
+
+.request-section {
+    background: #f8f9fb;
+    border: 1px solid #e5e5e5;
+    border-left: 4px solid var(--primary-color);
+    border-radius: 6px;
+    padding: 20px 22px;
+}
+
+.section-heading {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--heading-color);
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.request-section .slds-grid {
+    row-gap: 20px;
+}
+
+.request-section .slds-col {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.field-label {
+    color: var(--label-color);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 6px;
+}
+
+.request-section p:not(.field-label) {
+    color: #181818;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+/* ==========================================
+   RESULTS HEADER
+========================================== */
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.results-header .section-heading {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.result-count {
+    display: inline-flex;
+    align-items: center;
+    background: #eaf5fe;
+    color: #014486;
+    border: 1px solid #c9e2f5;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* ==========================================
+   QUOTE TABLE
+========================================== */
+
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    background: #ffffff;
+    margin-top: 12px;
+}
+
+/* ==========================================
+   ERROR MESSAGE
+========================================== */
+
+.slds-notify_alert {
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 16px 0;
+}
+
+.slds-alert_error {
+    background: #fef1ee;
+    border: 1px solid #ea001e;
+    color: #ba0517;
+}
+
+.slds-notify_alert h2 {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+/* ==========================================
+   EMPTY STATE
+========================================== */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    min-height: 180px;
+    background: #fafaf9;
+    border: 1px dashed #c9c7c5;
+    border-radius: 6px;
+    padding: 30px 20px;
+    margin-top: 12px;
+}
+
+.empty-state lightning-icon {
+    --slds-c-icon-color-foreground-default: #706e6b;
+}
+
+.empty-state p {
+    color: #706e6b;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* ==========================================
+   LOADING SPINNER
+========================================== */
+
+lightning-spinner {
+    position: relative;
+    display: block;
+    min-height: 100px;
+}
+
+/* ==========================================
+   RESPONSIVE DESIGN
+========================================== */
+
+@media screen and (max-width: 768px) {
+
+    .request-section {
+        padding: 15px;
+    }
+
+    .section-heading {
+        font-size: 16px;
+    }
+
+    .results-header {
+        align-items: flex-start;
+    }
+
+    .result-count {
+        font-size: 12px;
+    }
+
+    .table-container {
+        overflow-x: auto;
+    }
+}
+
+@media screen and (max-width: 480px) {
+
+    .request-section {
+        padding: 12px;
+    }
+
+    .results-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .empty-state {
+        min-height: 150px;
+        padding: 20px 12px;
+    }
+}

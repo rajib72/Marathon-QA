@@ -115,14 +115,17 @@ public with sharing class ReRateLWCController {
             || String.isNotBlank(policy.Residential_Type__c)
             || (policy.Product__c != null && policy.Product__c.containsIgnoreCase('Home'));
         response.productType = isHome ? 'Home' : 'Auto';
-        response.saleMileage = policy.Vehicle_Mileage_at_Contract_Inception__c != null ? policy.Vehicle_Mileage_at_Contract_Inception__c : 0;
         response.vehicleAge = saleYear - vehicleYear;
         response.saleDate = effectiveSaleDate;
+
+        /* --- AUTO-POPULATION FIELDS FROM EXISTING CONTRACT (COMMENTED OUT) ---
+        response.saleMileage = policy.Vehicle_Mileage_at_Contract_Inception__c != null ? policy.Vehicle_Mileage_at_Contract_Inception__c : 0;
         response.currentCoverageId = policy.Coverage_Level__c != null ? String.valueOf(policy.Coverage_Level__c) : '';
         response.currentCoverageName = coverageName;
         response.currentTermMonths = policy.Contract_Term_Months__c != null ? String.valueOf(Integer.valueOf(policy.Contract_Term_Months__c)) : '';
         response.currentTermMiles = policy.Contract_Term_Mileage__c != null ? String.valueOf(Integer.valueOf(policy.Contract_Term_Mileage__c)) : '';
         response.currentDeductible = policy.Deductible__c != null ? String.valueOf(Integer.valueOf(policy.Deductible__c)) : '';
+        ------------------------------------------------------------------------ */
 
         response.coverageOptions = fetchEligibleCoverageLevels(clientName, response.productName, coverageName);
         return response;

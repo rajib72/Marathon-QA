@@ -1613,38 +1613,82 @@ if (siblings.isEmpty()) {
 *
 * @param claimItems The list of ClaimItem records being updated in the before update context.
 */
-    public static void validateInvoiceNumberForAuthorizedStatus(List<ClaimItem> claimItems) {
-        // Collect ClaimIds for any ClaimItems being moved to a sensitive status
-        Set<Id> claimIds = new Set<Id>();
-        for (ClaimItem ci : claimItems) {
-            if (ci.Status__c != null &&
-                (ci.Status__c == 'Authorized' || ci.Status__c == 'Approved to Pay' || ci.Status__c == 'Paid')) {
-                    claimIds.add(ci.ClaimId);
-                }
+    
+/**
+ * Validates that Claim Items moving to 'Authorized',
+ * 'Approved to Pay', or 'Paid' have an Invoice Number
+ * when their Payee Account is an Inspection Company
+ * or Subcontractor.
+ */
+public static void validateInvoiceNumberForAuthorizedStatus(
+    List<ClaimItem> claimItems
+) {
+    // Collect Claim Ids for items moving to sensitive statuses.
+    Set<Id> claimIds = new Set<Id>();
+
+    // Track Claim Items whose invoice number is populated
+    // in the current transaction.
+    Set<Id> itemsWithInvoiceInCurrentUpdate = new Set<Id>();
+
+    for (ClaimItem ci : claimItems) {
+
+        if (
+            ci.ClaimId != null &&
+            ci.Status__c != null &&
+            (
+                ci.Status__c == 'Authorized' ||
+                ci.Status__c == 'Approved to Pay' ||
+                ci.Status__c == 'Paid'
+            )
+        ) {
+            claimIds.add(ci.ClaimId);
         }
-        
-        if (!claimIds.isEmpty()) {
-            // Only get siblings violating the condition (missing invoice + record type)
-            Set<Id> claimIdsWithViolation = new Set<Id>();
-            for (AggregateResult ar : [
-                SELECT ClaimId
-                FROM ClaimItem
-                WHERE ClaimId IN :claimIds
-                AND Invoice_Number__c = NULL
-                AND Payee_Name__r.RecordType.DeveloperName IN ('Inspection_Company', 'Subcontractor')
-                GROUP BY ClaimId
-            ]) {
-                claimIdsWithViolation.add((Id)ar.get('ClaimId'));
-            }
-            
-            // Block all items in such Claims
-            for (ClaimItem ci : claimItems) {
-                if (!claimIdsWithViolation.isEmpty() && claimIdsWithViolation.contains(ci.ClaimId)) {
-                    ci.addError('You must include the invoice number before Authorizing an Inspection or Subcontractor Claim Item. No Claim Items will move forward to Authorized.');
-                }
+
+        // Consider the new invoice value from Trigger.new,
+        // rather than the old database value.
+        if (
+            ci.Id != null &&
+            String.isNotBlank(ci.Invoice_Number__c)
+        ) {
+            itemsWithInvoiceInCurrentUpdate.add(ci.Id);
+        }
+    }
+
+    if (!claimIds.isEmpty()) {
+
+        // Find other Claim Items that still have a blank invoice.
+        Set<Id> claimIdsWithViolation = new Set<Id>();
+
+        for (AggregateResult ar : [
+            SELECT ClaimId
+            FROM ClaimItem
+            WHERE ClaimId IN :claimIds
+            AND Invoice_Number__c = NULL
+            AND Payee_Name__r.RecordType.DeveloperName
+                IN ('Inspection_Company', 'Subcontractor')
+            AND Id NOT IN :itemsWithInvoiceInCurrentUpdate
+            GROUP BY ClaimId
+        ]) {
+            claimIdsWithViolation.add((Id)ar.get('ClaimId'));
+        }
+
+        // Preserve the existing validation behavior:
+        // block items when another Claim Item in the same
+        // Claim still has a missing invoice number.
+        for (ClaimItem ci : claimItems) {
+
+            if (
+                ci.ClaimId != null &&
+                claimIdsWithViolation.contains(ci.ClaimId)
+            ) {
+                ci.addError(
+                    'You must include the invoice number before Authorizing an Inspection or Subcontractor Claim Item. No Claim Items will move forward to Authorized.'
+                );
             }
         }
     }
+}
+
 
     //added by Joyita Sarkar 19.8.26
  /**

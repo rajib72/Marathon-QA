@@ -455,6 +455,7 @@ System.debug(
 
                 return result;
             }
+            
 
 
             List<Account> accounts = [
@@ -498,6 +499,18 @@ System.debug(
                 return result;
             }
         }
+        // 5. Check if Inspection Claim Item is already Paid
+
+if (inspectionItem.Status__c == 'Paid') {
+
+    result.statusCode = 409;
+
+    result.message =
+        'The inspection has already been paid. ' +
+        'Duplicate inspection report submissions are not allowed.';
+
+    return result;
+}
 
         // 5. Update Inspection Claim Item
 

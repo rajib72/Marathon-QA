@@ -11,7 +11,8 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
 
     @track selectedCoverageId = '';
     @track selectedCoverageName = '';
-    @track saleMileage = 0;
+    // @track saleMileage = 0; // Commented out default 0 so Sale Odometer starts blank
+    @track saleMileage = null;
     @track selectedMonths = '';
     @track selectedMiles = '';
     @track selectedDeductible = '';
@@ -37,6 +38,8 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             const data = await getInitialContractData({ contractId: contractId });
             this.contractContext = data;
             this.coverageOptions = data.coverageOptions || [];
+
+            /* --- AUTO-POPULATION FROM EXISTING CONTRACT ON LOAD (COMMENTED OUT) ---
             this.saleMileage = data.saleMileage || 0;
             this.selectedCoverageId = data.currentCoverageId || '';
             this.selectedCoverageName = data.currentCoverageName || '';
@@ -44,6 +47,7 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             if (this.selectedCoverageId) {
                 await this.loadMatrixRows(true);
             }
+            ------------------------------------------------------------------------- */
         } catch (error) {
             console.error('Error loading initial contract data:', error);
         }
@@ -56,7 +60,7 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             this.eligibleMatrixRows = await getEligibleMatrixRows({
                 rateSet: this.contractContext.rateSet,
                 coverageId: this.selectedCoverageId,
-                saleMileage: this.saleMileage,
+                saleMileage: this.saleMileage !== null && this.saleMileage !== '' ? Number(this.saleMileage) : 0,
                 vehicleAge: this.contractContext.vehicleAge,
                 rateClass: this.contractContext.rateClass,
                 saleDate: this.contractContext.saleDate
@@ -70,20 +74,29 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
         }
     }
 
-    bbuildMonthOptions(isInitialLoad = false) {
+    buildMonthOptions(isInitialLoad = false) {
         const uniqueMonths = [...new Set(this.eligibleMatrixRows.map(r => r.termMonths).filter(Boolean))];
         uniqueMonths.sort((a, b) => Number(a) - Number(b));
         this.monthOptions = uniqueMonths.map(m => ({ label: m, value: m }));
 
+        /* --- AUTO-POPULATION OF TERM MONTHS (COMMENTED OUT) ---
         if (isInitialLoad && this.contractContext.currentTermMonths && uniqueMonths.includes(this.contractContext.currentTermMonths)) {
-            this.selectedMonths = this.contractContext.currentTermMonths;
-        } else if (!this.isAutoProduct && this.contractContext.currentTermMonths) {
             this.selectedMonths = this.contractContext.currentTermMonths;
         } else if (!uniqueMonths.includes(this.selectedMonths)) {
             this.selectedMonths = uniqueMonths.length === 1 ? uniqueMonths[0] : '';
         }
+        --------------------------------------------------------- */
+        if (!uniqueMonths.includes(this.selectedMonths)) {
+            this.selectedMonths = '';
+        }
 
-        this.buildMileOptions(isInitialLoad);
+        if (this.isAutoProduct) {
+            this.buildMileOptions(isInitialLoad);
+        } else {
+            this.selectedMiles = '';
+            this.mileOptions = [];
+            this.buildDeductibleOptions(isInitialLoad);
+        }
     }
 
     buildMileOptions(isInitialLoad = false) {
@@ -95,31 +108,44 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
         uniqueMiles.sort((a, b) => Number(a) - Number(b));
         this.mileOptions = uniqueMiles.map(m => ({ label: m, value: m }));
 
+        /* --- AUTO-POPULATION OF TERM MILES (COMMENTED OUT) ---
         if (isInitialLoad && this.contractContext.currentTermMiles && uniqueMiles.includes(this.contractContext.currentTermMiles)) {
             this.selectedMiles = this.contractContext.currentTermMiles;
         } else if (!uniqueMiles.includes(this.selectedMiles)) {
             this.selectedMiles = uniqueMiles.length === 1 ? uniqueMiles[0] : '';
+        }
+        -------------------------------------------------------- */
+        if (!uniqueMiles.includes(this.selectedMiles)) {
+            this.selectedMiles = '';
         }
 
         this.buildDeductibleOptions(isInitialLoad);
     }
 
     buildDeductibleOptions(isInitialLoad = false) {
-        let filteredRows = this.eligibleMatrixRows;
+        let filteredRows = this.selectedMonths
+            ? this.eligibleMatrixRows.filter(r => r.termMonths === this.selectedMonths)
+            : [];
+
         if (this.isAutoProduct) {
-            filteredRows = filteredRows.filter(
-                r => r.termMonths === this.selectedMonths && r.termMiles === this.selectedMiles
-            );
+            filteredRows = this.selectedMiles
+                ? filteredRows.filter(r => r.termMiles === this.selectedMiles)
+                : [];
         }
 
         const uniqueDeductibles = [...new Set(filteredRows.map(r => r.deductible).filter(Boolean))];
         uniqueDeductibles.sort((a, b) => Number(a) - Number(b));
         this.deductibleOptions = uniqueDeductibles.map(d => ({ label: '$' + d, value: d }));
 
+        /* --- AUTO-POPULATION OF DEDUCTIBLE (COMMENTED OUT) ---
         if (isInitialLoad && this.contractContext.currentDeductible && uniqueDeductibles.includes(this.contractContext.currentDeductible)) {
             this.selectedDeductible = this.contractContext.currentDeductible;
         } else if (!uniqueDeductibles.includes(this.selectedDeductible)) {
             this.selectedDeductible = uniqueDeductibles.length === 1 ? uniqueDeductibles[0] : '';
+        }
+        -------------------------------------------------------- */
+        if (!uniqueDeductibles.includes(this.selectedDeductible)) {
+            this.selectedDeductible = '';
         }
     }
 
@@ -134,7 +160,7 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
     }
 
     handleMileageChange(event) {
-        this.saleMileage = event.detail.value ? Number(event.detail.value) : 0;
+        this.saleMileage = event.detail.value !== '' && event.detail.value !== null ? Number(event.detail.value) : null;
         window.clearTimeout(this.mileageDebounceTimeout);
         this.mileageDebounceTimeout = window.setTimeout(() => {
             this.loadMatrixRows(false);
@@ -145,7 +171,11 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
         this.selectedMonths = event.detail.value;
         this.selectedMiles = '';
         this.selectedDeductible = '';
-        this.buildMileOptions(false);
+        if (this.isAutoProduct) {
+            this.buildMileOptions(false);
+        } else {
+            this.buildDeductibleOptions(false);
+        }
         this.syncToOmniScript();
     }
 
@@ -170,9 +200,9 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             ...existingStepData,
             Coverage_Name_NonSecureOne: this.selectedCoverageId,
             Coverage_Label_NonSecureOne: this.selectedCoverageName,
-            Sale_Mileage_NonSecureOne: this.saleMileage !== '' ? Number(this.saleMileage) : null,
+            Sale_Mileage_NonSecureOne: this.isAutoProduct && this.saleMileage !== '' && this.saleMileage !== null ? Number(this.saleMileage) : null,
             Term_Months_NonSecureOne: this.selectedMonths !== '' ? Number(this.selectedMonths) : null,
-            Term_Miles_NonSecureOne: this.selectedMiles !== '' ? Number(this.selectedMiles) : null,
+            Term_Miles_NonSecureOne: this.isAutoProduct && this.selectedMiles !== '' ? Number(this.selectedMiles) : null,
             Deductible__c: this.selectedDeductible !== '' ? Number(this.selectedDeductible) : null
         };
 

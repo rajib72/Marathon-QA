@@ -141,16 +141,21 @@ loadServiceCenterMapAccounts() {
     
 
 handleMarkerSelect(event) {
+    const selectedMarkerValue = event.detail.selectedMarkerValue;
+
+    console.log('Selected Marker Value:', selectedMarkerValue);
+
     const selectedMarker = this.mapMarkers.find(element => {
-        return element.value === event.target.selectedMarkerValue;
+        return element.value === selectedMarkerValue;
     });
 
     if (!selectedMarker) {
+        console.warn('No matching marker found:', selectedMarkerValue);
         return;
     }
 
     if (selectedMarker.title === 'Your Location') {
-        this.selectedServiceCenter = null;
+        this.selectedServiceCenter = [];
         this.repairShopName = '';
         this.street = '';
         this.city = '';
@@ -162,7 +167,7 @@ handleMarkerSelect(event) {
         return;
     }
 
-    this.selectedServiceCenter = selectedMarker;
+    this.selectedServiceCenter = [selectedMarker];
 
     this.repairShopName = selectedMarker.title;
     this.street = selectedMarker.location?.Street || '';
@@ -171,7 +176,13 @@ handleMarkerSelect(event) {
     this.postalCode = selectedMarker.location?.PostalCode || '';
     this.country = selectedMarker.location?.Country || '';
     this.phone = selectedMarker.phone || '';
+
     this.isMarkerSelected = true;
+
+    console.log(
+        'Selected Service Center Data:',
+        JSON.stringify(this.selectedServiceCenter)
+    );
 }
 
 
@@ -179,7 +190,8 @@ handleMarkerSelect(event) {
     // Handles on click handler on search button. Passes selectedServiceCenter and claimRecordId to create new account and update associated Claim record.
     
 handleSaveSelection() {
-    if (!this.selectedServiceCenter) {
+    if (!this.selectedServiceCenter ||
+    this.selectedServiceCenter.length === 0) {
         this.dispatchEvent(
             new ShowToastEvent({
                 title: 'Please select a repair shop.',
@@ -480,7 +492,8 @@ if (this.isPhoneNumber(this.serviceCompany)) {
 
             const location =
                 geocodeData.results[0].geometry.location;
-
+                
+            console.log('Keyword being passed to Google:', this.keyword);
             const serviceStationsResult =
                 await getNearbyServiceStations({
                     lat: location.lat,

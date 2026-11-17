@@ -5,7 +5,7 @@
  * @last modified on  : 04-22-2025
  * @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 **/
-@isTest
+@IsTest(SeeAllData=false)
 public class BatchContractAllocationTest {
 
     /* =========================================================
@@ -247,6 +247,38 @@ public class BatchContractAllocationTest {
         batch.execute(null, new List<InsurancePolicy>());
         Test.stopTest();
         System.assertEquals(0, batch.processedContractsCount);
+    }
+
+    @IsTest
+    static void testExecuteSkipsContractWithNoPendingFunding() {
+        // The current batch uses a stale-query guard: when another job has
+        // already processed all Funding, a second job must do no allocation.
+        Account client = TestDataFactory.createAccount(true);
+        client.AccountNumber = 'WUS';
+        update client;
+        Account dealer = TestDataFactory.createDealerAccount(true);
+        InsurancePolicy policy = createValidInsurancePolicy(client.Id, dealer.Id);
+
+        System.assertEquals(0, [
+            SELECT COUNT() FROM Funding__c
+            WHERE Contract__c = :policy.Id AND Time_Processed__c = null
+        ]);
+
+        Integer allocationCountBefore = [
+            SELECT COUNT() FROM Allocation__c WHERE Contract__c = :policy.Id
+        ];
+        BatchContractAllocation batch = new BatchContractAllocation(
+            BatchContractAllocation.ELIGIBLE_MODE, null
+        );
+        Test.startTest();
+        batch.execute(null, new List<InsurancePolicy>{ policy });
+        Test.stopTest();
+
+        System.assertEquals(0, batch.processedContractsCount,
+            'An already-completed Contract must never count as newly processed.');
+        System.assertEquals(allocationCountBefore, [
+            SELECT COUNT() FROM Allocation__c WHERE Contract__c = :policy.Id
+        ], 'A replay with no pending Funding must not create additional allocations.');
     }
 
     @IsTest
@@ -656,85 +688,121 @@ public class BatchContractAllocationTest {
 
     // //
     
-    @isTest
+    @IsTest
     public static void testCalculateMaxAllocation() {
         Account clientAccount = TestDataFactory.createAccount(true);
-        clientAccount.AccountNumber = 'WUS'; // Allowed client code under Sold_Contract_Validation.
+        clientAccount.AccountNumber = 'WUS';
         update clientAccount;
         Account programcodeAccount = TestDataFactory.createDealerAccount(true);
         programcodeAccount.Name = 'CCV';
         programcodeAccount.AccountNumber = 'CCV';
         update programcodeAccount;
-        InsurancePolicy policyRec1 = createValidInsurancePolicy(clientAccount.Id, programcodeAccount.Id);
+        InsurancePolicy policyRec1 = createValidInsurancePolicy(
+            clientAccount.Id, programcodeAccount.Id
+        );
         policyRec1.Client__c = clientAccount.Id;
         policyRec1.Lien_Holder__c = programcodeAccount.Id;
         policyRec1.Program_Code__c = 'MDMD';
         policyRec1.Reserve__c = 1000;
-        policyRec1.SaleDate = System.Today();
+        policyRec1.SaleDate = System.today();
         policyRec1.Legacy_Source__c = 'DSI';
         update policyRec1;
 
         List<Allocation_Code__c> allocationCodes = new List<Allocation_Code__c>();
-        //Allocation Amount is numeric
-        Allocation_Code__c all1017Code = new Allocation_Code__c();
-        all1017Code.Name = '1017';
-        all1017Code.Allocation_Amount__c = '200.50';
-        all1017Code.Payee_Type__c = 'Company';
-        allocationCodes.add(all1017Code);
-
-        //Allocation Amount matches Descriptor
-        Allocation_Code__c all8001Code = new Allocation_Code__c();
-        all8001Code.Name = '8001';
-        all8001Code.Allocation_Amount__c = 'Premium Tax';
-        all8001Code.Descriptor__c = 'Premium Tax';
-        all8001Code.Payee_Type__c = 'Company';
-        allocationCodes.add(all8001Code);
-
-        //Allocation Amount starts with 'S' and length < 5
-        Allocation_Code__c all8004Code = new Allocation_Code__c();
-        all8004Code.Name = '8004';
-        all8004Code.Allocation_Amount__c = 'S12';
-        all8004Code.Payee_Type__c = 'Company';
-        allocationCodes.add(all8004Code);
-        
-        //Formula allocation amount
-        Allocation_Code__c all8005Code = new Allocation_Code__c();
-        all8005Code.Name = '8005';
-        all8005Code.Allocation_Amount__c = '{!Reserve__c} + 100';
-        all8005Code.Payee_Type__c = 'Company';
-        allocationCodes.add(all8005Code);
+        Allocation_Code__c numericCode = new Allocation_Code__c(
+            Name = '1017', Allocation_Amount__c = '200.50', Payee_Type__c = 'Company'
+        );
+        Allocation_Code__c reserveByDescriptorCode = new Allocation_Code__c(
+            Name = '8001', Allocation_Amount__c = 'Premium Tax',
+            Descriptor__c = 'Premium Tax', Payee_Type__c = 'Company'
+        );
+        Allocation_Code__c supplementalCode = new Allocation_Code__c(
+            Name = '8004', Allocation_Amount__c = 'S12', Payee_Type__c = 'Company'
+        );
+        Allocation_Code__c formulaCode = new Allocation_Code__c(
+            Name = '8005', Allocation_Amount__c = '{!Reserve__c} + 100',
+            Payee_Type__c = 'Company'
+        );
+        allocationCodes.add(numericCode);
+        allocationCodes.add(reserveByDescriptorCode);
+        allocationCodes.add(supplementalCode);
+        allocationCodes.add(formulaCode);
         insert allocationCodes;
-        //invalid Formula and null
-        Allocation_Code__c invalidFormulaCode = new Allocation_Code__c();
-        invalidFormulaCode.Name = 'AAA1';
-        invalidFormulaCode.Allocation_Amount__c = 'Invalid Formula';
-        invalidFormulaCode.Payee_Type__c = 'Company';
-        allocationCodes.add(invalidFormulaCode);
-        Allocation_Code__c nullAllocCode = new Allocation_Code__c();
-        nullAllocCode.Name = 'Null';
+
+        // These two records are only supplied to the public method; no DML needed.
+        Allocation_Code__c malformedCode = new Allocation_Code__c(
+            Name = 'AAA1', Allocation_Amount__c = 'Invalid Formula',
+            Payee_Type__c = 'Company'
+        );
+        Allocation_Code__c nullAmountCode = new Allocation_Code__c(Name = 'Null');
 
         Test.startTest();
-        Decimal result1 = ContractAllocationUtilityCtrl.calculateMaxAllocation(policyRec1, all1017Code);
-        Decimal result2 = ContractAllocationUtilityCtrl.calculateMaxAllocation(policyRec1, all8001Code);
-        Decimal result3 = ContractAllocationUtilityCtrl.calculateMaxAllocation(policyRec1, all8004Code);
-        Decimal result4 = ContractAllocationUtilityCtrl.calculateMaxAllocation(policyRec1, all8005Code);
-        Decimal result5 = ContractAllocationUtilityCtrl.calculateMaxAllocation(policyRec1, invalidFormulaCode);
-        Decimal result6 = ContractAllocationUtilityCtrl.calculateMaxAllocation(policyRec1, nullAllocCode);
+        Decimal numericResult = ContractAllocationUtilityCtrl.calculateMaxAllocation(
+            policyRec1, numericCode
+        );
+        Decimal descriptorResult = ContractAllocationUtilityCtrl.calculateMaxAllocation(
+            policyRec1, reserveByDescriptorCode
+        );
+        Decimal supplementalResult = ContractAllocationUtilityCtrl.calculateMaxAllocation(
+            policyRec1, supplementalCode
+        );
+        Decimal formulaResult = ContractAllocationUtilityCtrl.calculateMaxAllocation(
+            policyRec1, formulaCode
+        );
+
+        // With the new financial error propagation, malformed formulas MUST throw.
+        // Previously this test expected the method to quietly return zero.
+        Boolean malformedFormulaRejected = false;
+        try {
+            ContractAllocationUtilityCtrl.calculateMaxAllocation(
+                policyRec1, malformedCode
+            );
+        } catch (Exception ex) {
+            malformedFormulaRejected = true;
+            System.assert(
+                String.isNotBlank(ex.getMessage()),
+                'A malformed allocation formula must expose a diagnostic exception.'
+            );
+        }
+        Decimal nullResult = ContractAllocationUtilityCtrl.calculateMaxAllocation(
+            policyRec1, nullAmountCode
+        );
         Test.stopTest();
 
+        System.assertEquals(Decimal.valueOf('200.50'), numericResult);
+        System.assertEquals(Decimal.valueOf('1000'), descriptorResult);
+        System.assertEquals(Decimal.valueOf('0'), supplementalResult);
+        System.assertEquals(Decimal.valueOf('1100'), formulaResult);
+        System.assert(malformedFormulaRejected,
+            'Malformed formulas must be rejected, not treated as a zero allocation.');
+        System.assertEquals(Decimal.valueOf('0'), nullResult);
     }
-    
-    @isTest
+
+    @IsTest
     public static void testCatchBlock() {
-        // Verify the utility's public null-handling behavior. Do not mask
-        // unexpected errors with a fictitious expected exception message.
         Test.startTest();
-        ContractAllocationUtilityCtrl.assignAllocationtoContract(null);
-        ContractAllocationUtilityCtrl.splitContractsByClient(null);
-        ContractAllocationUtilityCtrl.distributeFundingToContracts(null);
+        // Null collections are a programmer error. The current utility correctly
+        // propagates a NullPointerException to its transaction-level caller.
+        Boolean nullInputRejected = false;
+        try {
+            ContractAllocationUtilityCtrl.assignAllocationtoContract(null);
+        } catch (System.NullPointerException ex) {
+            nullInputRejected = true;
+        }
+        System.assert(nullInputRejected,
+            'assignAllocationtoContract(null) must not silently succeed.');
+
+        // Empty collections are the supported no-work input to these entry points.
+        // The tests below must finish without errors or creating allocations.
+        ContractAllocationUtilityCtrl.splitContractsByClient(
+            new List<InsurancePolicy>()
+        );
+        ContractAllocationUtilityCtrl.distributeFundingToContracts(
+            new List<InsurancePolicy>()
+        );
         Test.stopTest();
     }
-     
+
     @isTest
     public static void testGetSupplementalValue() {
         List<InsurancePolicy> policiesList = new List<InsurancePolicy>();

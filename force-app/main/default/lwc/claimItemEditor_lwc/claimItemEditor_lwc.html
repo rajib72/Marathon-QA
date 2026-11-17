@@ -68,6 +68,17 @@
     disabled={isBulkUpdateDisabled}>
 </lightning-button>
 
+<template lwc:if={enablePricingDemo}>
+<!-- Vendor Pricing preview: client demonstration only, no quote callouts or save writes. -->
+<lightning-button
+    label="Find Parts Pricing"
+    icon-name="utility:search"
+    variant="neutral"
+    onclick={handleOpenVendorPricingForSelection}
+    disabled={isVendorPricingPreviewDisabled}>
+</lightning-button>
+</template>
+
 <template lwc:if={showRequestInspection}>
     <lightning-button
         label="Request an Inspection"
@@ -528,6 +539,25 @@
                                     </button>
                                 </div>
                             </div>
+
+                            <!-- Row-level action: does not require selecting the checkbox. -->
+                            <template lwc:if={enablePricingDemo}>
+                            <template lwc:if={row.isPricingPartRow}>
+                                <div class="vendor-pricing-row-action">
+                                    <lightning-button
+                                        label="Find Parts Pricing"
+                                        icon-name="utility:search"
+                                        variant="base"
+                                        data-id={row.uniqueKey}
+                                        onclick={handleOpenVendorPricingForRow}
+                                        disabled={isLoading}>
+                                    </lightning-button>
+                                    <span class="vendor-pricing-preview-label">
+                                        Preview UI · Example quotations only
+                                    </span>
+                                </div>
+                            </template>
+                            </template>
                         </section>
                     </template>
                 </div>

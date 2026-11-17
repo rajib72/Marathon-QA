@@ -430,6 +430,7 @@ async handleQuoteTypeChange(event) {
     // Clear selections dependent on Quote Type.
     this.client = '';
     this.product = '';
+    this.state = '';
     this.selectedOptions = [];
 
     // Clear dependent dropdown options.
@@ -455,6 +456,14 @@ async handleQuoteTypeChange(event) {
             field.value = null;
         }
     });
+
+    const stateField = this.template.querySelector(
+        'lightning-combobox[name="state"]'
+    );
+
+    if (stateField) {
+        stateField.value = '';
+    }
 
     // Load clients matching the selected Quote Type.
     await this.loadClients();
@@ -550,7 +559,7 @@ handleResidenceTypeChange(event) {
     // ============================================================
     // GET QUOTES
     // ============================================================
-
+/*
     async handleGetQuotes() {
 
         if (!this.validateForm()) {
@@ -590,10 +599,10 @@ handleResidenceTypeChange(event) {
              * MRT3-93 will use these quote results.
              *
              * For now we keep the results in session storage
-             * and navigate to the Quote Results component/page.
-             */
+             * and navigate to the Quote Results component/page.*/
+             
 
-            sessionStorage.setItem(
+         /*   sessionStorage.setItem(
                 'internalQuoteResults',
                 JSON.stringify(result || [])
             );
@@ -636,6 +645,14 @@ handleResidenceTypeChange(event) {
                 )
             );
 
+            // Navigate to Internal Quote Results tab
+            this[NavigationMixin.Navigate]({
+                type: 'standard__navItemPage',
+                attributes: {
+                    apiName: 'Internal_Quote_Results'
+                }
+            });
+
 
             this.showSuccess(
                 'Quotes retrieved successfully.'
@@ -654,7 +671,88 @@ handleResidenceTypeChange(event) {
             this.isLoading = false;
 
         }
+    }*/
+
+
+        
+async handleGetQuotes() {
+    if (!this.validateForm()) {
+        return;
     }
+
+    this.isLoading = true;
+
+    try {
+        const result = await getQuotes({
+            quoteType: this.quoteType,
+            client: this.client,
+            product: this.product,
+            saleOdometer: this.saleOdometer,
+            state: this.state,
+            vin: this.vin,
+            options: this.selectedOptions,
+            residenceType: this.residenceType
+        });
+
+        // Generate a unique ID for every quote request.
+        const requestId = Date.now().toString();
+
+        // Store the latest quote results.
+        sessionStorage.setItem(
+            'internalQuoteResults',
+            JSON.stringify(result || [])
+        );
+
+        // Store request details along with the unique ID.
+        sessionStorage.setItem(
+            'internalQuoteRequest',
+            JSON.stringify({
+                requestId: requestId,
+                quoteType: this.quoteType,
+                client: this.client,
+                product: this.product,
+                saleOdometer: this.saleOdometer,
+                state: this.state,
+                vin: this.vin,
+                options: this.selectedOptions,
+                residenceType: this.residenceType
+            })
+        );
+
+        this.dispatchEvent(
+            new CustomEvent('quotesretrieved', {
+                detail: {
+                    quotes: result || [],
+                    requestId: requestId
+                }
+            })
+        );
+
+        // Navigate with a unique state parameter.
+        this[NavigationMixin.Navigate]({
+            type: 'standard__navItemPage',
+            attributes: {
+                apiName: 'Internal_Quote_Results'
+            },
+            state: {
+                c__requestId: requestId
+            }
+        });
+
+        this.showSuccess('Quotes retrieved successfully.');
+
+    } catch (error) {
+        this.showError(
+            'Unable to retrieve quotes',
+            this.getErrorMessage(error)
+        );
+    } finally {
+        this.isLoading = false;
+    }
+}
+
+
+
 
 
   // ============================================================
@@ -788,8 +886,8 @@ handleReset() {
     this.quoteType = '';
     this.client = '';
     this.product = '';
+    this.state = ''; 
     this.saleOdometer = '';
-    this.state = '';
     this.vin = '';
     this.residenceType = '';
     this.residenceTypeOptions = [];
@@ -813,6 +911,9 @@ handleReset() {
             field.value = null;
         }
     });
+    
+
+
 }
 
 

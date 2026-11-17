@@ -12,6 +12,12 @@
             <objects>
                 <object>Claim</object>
             </objects>
+            <property
+                name="enablePricingDemo"
+                type="Boolean"
+                default="false"
+                label="Enable Vendor Pricing Demo UI"
+                description="QA-only preview with sample quotes; no live API or persistence."/>
         </targetConfig>
     </targetConfigs>
 </LightningComponentBundle>

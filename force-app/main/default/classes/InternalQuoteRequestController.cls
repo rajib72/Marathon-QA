@@ -72,6 +72,21 @@ public with sharing class InternalQuoteRequestController {
 
         @AuraEnabled
         public String garageDoorOpener;
+
+        @AuraEnabled
+        public String newOrUsed;
+
+        @AuraEnabled
+        public Integer contractTermMileage;
+
+        @AuraEnabled
+        public Integer validationMiles;
+
+        @AuraEnabled
+        public String surcharges;
+
+        @AuraEnabled
+        public String rateClass;
     }
 
 
@@ -599,9 +614,37 @@ public static List<QuoteResultWrapper> getQuotes(
             );
         }
 
-        throw new AuraHandledException(
+    /*    throw new AuraHandledException(
             'Auto quote calculation has not been connected yet.'
+        );*/
+
+         try {
+        QuoteService.EnduranceRequest requestObj =
+            new QuoteService.EnduranceRequest();
+
+        requestObj.VIN = vin;
+        requestObj.Vehicle_Mileage_at_Contract_Inception =
+            Integer.valueOf(saleOdometer);
+        requestObj.Original_State = state;
+        requestObj.Option_1 =
+            options == null ? '' : String.join(options, ';');
+        requestObj.Client = client;
+
+        // The existing QuoteService requires UpToorAddOn.
+        // It is not supplied by the current request component.
+        // Do not invent a value for it.
+
+        throw new AuraHandledException(
+            'Auto quote calculation requires the existing Expire_Type value.'
         );
+
+    } catch (AuraHandledException e) {
+        throw e;
+    } catch (Exception e) {
+        throw new AuraHandledException(
+            'Unable to process Auto quote request: ' + e.getMessage()
+        );
+    }
     }
 
     // ============================================================
