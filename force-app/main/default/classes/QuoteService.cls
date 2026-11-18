@@ -5,6 +5,21 @@
  */
 @RestResource(UrlMapping='/QuoteRequestService/*')
 global class QuoteService {
+    private class RateMatrixRowData {
+    Map<String, Object> inputData;
+    Map<String, Object> outputData;
+
+    RateMatrixRowData(
+        Map<String, Object> inputData,
+        Map<String, Object> outputData
+    ) {
+        this.inputData = inputData;
+        this.outputData = outputData;
+    }
+}
+
+private static Map<Id, RateMatrixRowData> rateMatrixRowDataCache =
+    new Map<Id, RateMatrixRowData>();
     public static Map<String, Map<String,String>> responseMap = new Map<String, Map<String,String>>();
     public static Map<String, List<Map<String,String>>> responseMapList = new Map<String, List<Map<String,String>>>();
     public static Map<String, String> vehicleMap = new Map<String,String>();
@@ -35,44 +50,25 @@ global class QuoteService {
             );
 
             
-            String requestedUpToOrAddOn = requestObj.UpToorAddOn;
+           
+String requestedUpToOrAddOn = requestObj.UpToorAddOn;
 
-            QuoteService.ResponseGenerator successResponseObj;
+QuoteService.ResponseGenerator successResponseObj;
 
-            if (String.isBlank(requestedUpToOrAddOn)) {
+if (String.isBlank(requestedUpToOrAddOn)) {
 
-                // Generate UpTo quotes first
-                QuoteService.ResponseGenerator upToResponse =
-                    generateQuoteRequest(requestObj, 'UpTo');
+    // Generate both UpTo and AddOn quotes
+    successResponseObj = generateAllQuoteRequest(requestObj);
 
-                // Generate AddOn quotes next
-                QuoteService.ResponseGenerator addOnResponse =
-                    generateQuoteRequest(requestObj, 'AddOn');
+} else {
 
-                // Combine both quote lists
-                successResponseObj = new QuoteService.ResponseGenerator();
-                successResponseObj.status = 200;
-                successResponseObj.error = '';
-                successResponseObj.payload = upToResponse.payload;
+    // Generate only the requested quote type
+    successResponseObj =
+        generateQuoteRequest(requestObj, requestedUpToOrAddOn);
+}
 
-                // Preserve the original API request value
-                successResponseObj.payload.UpToorAddOn =
-                    requestedUpToOrAddOn;
+responseStr = JSON.serialize(successResponseObj);
 
-                successResponseObj.quotes =
-                    new List<QuoteService.Quote>();
-
-                successResponseObj.quotes.addAll(upToResponse.quotes);
-                successResponseObj.quotes.addAll(addOnResponse.quotes);
-
-            } else {
-
-                // Process only the value received in the API request
-                successResponseObj =
-                    generateQuoteRequest(requestObj, requestedUpToOrAddOn);
-            }
-
-            responseStr = JSON.serialize(successResponseObj);
 
         } catch (Exception e) {
             // populating the error response
@@ -108,6 +104,77 @@ global class QuoteService {
         requestObj.UpToorAddOn = upToOrAddOn;
         return calculateQuotes(requestObj);
     }
+
+private static QuoteService.ResponseGenerator generateAllQuoteRequest(
+    QuoteService.EnduranceRequest requestObj
+) {
+    String originalUpToOrAddOn = requestObj.UpToorAddOn;
+
+    try {
+
+        // Generate UpTo quotes first
+        QuoteService.ResponseGenerator upToResponse =
+            generateQuoteRequest(requestObj, 'UpTo');
+
+        System.debug('UPTO RESPONSE STATUS: ' +
+            (upToResponse == null ? null : upToResponse.status));
+
+        System.debug('UPTO QUOTE COUNT: ' +
+            (upToResponse == null || upToResponse.quotes == null
+                ? 0
+                : upToResponse.quotes.size()));
+
+        if (upToResponse == null || upToResponse.status != 200) {
+            throw new QuoteConfigurationException(
+                'Error generating UpTo quotes.'
+            );
+        }
+
+        // Generate AddOn quotes next
+        QuoteService.ResponseGenerator addOnResponse =
+            generateQuoteRequest(requestObj, 'AddOn');
+
+        System.debug('ADDON RESPONSE STATUS: ' +
+            (addOnResponse == null ? null : addOnResponse.status));
+
+        System.debug('ADDON QUOTE COUNT: ' +
+            (addOnResponse == null || addOnResponse.quotes == null
+                ? 0
+                : addOnResponse.quotes.size()));
+
+        if (addOnResponse == null || addOnResponse.status != 200) {
+            throw new QuoteConfigurationException(
+                'Error generating AddOn quotes.'
+            );
+        }
+
+        // Combine both responses
+        QuoteService.ResponseGenerator combinedResponse =
+            new QuoteService.ResponseGenerator();
+
+        combinedResponse.status = 200;
+        combinedResponse.error = '';
+        combinedResponse.payload = upToResponse.payload;
+        combinedResponse.quotes = new List<QuoteService.Quote>();
+
+        if (upToResponse.quotes != null) {
+            combinedResponse.quotes.addAll(upToResponse.quotes);
+        }
+
+        if (addOnResponse.quotes != null) {
+            combinedResponse.quotes.addAll(addOnResponse.quotes);
+        }
+
+        System.debug('COMBINED QUOTE COUNT: ' +
+            combinedResponse.quotes.size());
+
+        return combinedResponse;
+
+    } finally {
+        // Restore the original request value
+        requestObj.UpToorAddOn = originalUpToOrAddOn;
+    }
+}
 
 
  /*   
@@ -760,33 +827,69 @@ String responseBody = ContractUtility.fetchLookupTableRows(
                     List<Map<String, String>> rowDataFieldsMapList = new List<Map<String, String>>();
                     String uniqueName = versionIdtoMatrixName.containsKey(versionId) ? versionIdtoMatrixName.get(versionId) : '';
                     //fetching related matrix rows records
-                    for(CalculationMatrixRow matrixRecord : [SELECT Id, Name, InputData, OutputData, CalculationMatrixVersionId FROM CalculationMatrixRow where CalculationMatrixVersionId = : versionId]) {
-                        Map<String, Object> rowData = (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.OutputData);
-                        Map<String, Object> rowInputData = (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.InputData);
-                        if(rowData != null && rowInputData != null) {
-                            //filtering records
-                            List<String> concatinatedValues = concatinatedDetailsMap.containsKey(uniqueName) ? concatinatedDetailsMap.get(uniqueName)[0].split('#') : null;   
-                            if(concatinatedValues != null && concatinatedValues[0] == String.valueOf(rowInputData.get('CoverageName')) &&
-                                concatinatedValues[1] == String.valueOf(rowInputData.get('RateClass')) &&
-                                concatinatedValues[2] == String.valueOf(rowInputData.get('ExpireType')) &&
-                                Integer.valueOf(concatinatedValues[3]) >= Integer.valueOf(rowInputData.get('MinMiles')) && Integer.valueOf(concatinatedValues[3]) <= Integer.valueOf(rowData.get('MaxMiles')) &&
-                                Integer.valueOf(concatinatedValues[4]) >= Integer.valueOf(rowInputData.get('MinAge')) && Integer.valueOf(concatinatedValues[4]) <= Integer.valueOf(rowData.get('MaxAge'))) {
-                                Map<String, String> rowDataFieldsMap = new Map<String, String>();
-                                rowDataFieldsMap.put('MaxAge RateCost', String.valueOf(rowData.get('MaxAge')));
-                                rowDataFieldsMap.put('MaxMiles RateCost', String.valueOf(rowData.get('MaxMiles')));
-                                rowDataFieldsMap.put('BaseReserve RateCost', String.valueOf(rowData.get('BaseReserve')));
-                                rowDataFieldsMap.put('RateCode RateCost', String.valueOf(rowData.get('RateCode')));
-                                rowDataFieldsMap.put('Commission RateCost', String.valueOf(rowData.get('Commission')));
-                                rowDataFieldsMap.put('PremiumTax RateCost', String.valueOf(rowData.get('PremiumTax')));
-                                rowDataFieldsMap.put('ExpiryType RateCost', String.valueOf(rowInputData.get('ExpireType')));
-                                rowDataFieldsMap.put('TermMonths RateCost', String.valueOf(rowInputData.get('TermMonths')));
-                                rowDataFieldsMap.put('TermMiles RateCost', String.valueOf(rowInputData.get('TermMiles')));
-                                rowDataFieldsMap.put('Deductible RateCost', String.valueOf(rowInputData.get('Deductible')));
-                                rowDataFieldsMap.put('RateClass RateCost', String.valueOf(rowInputData.get('RateClass')));
-                                rowDataFieldsMapList.add(rowDataFieldsMap);
-                            }
-                        }
-                    }
+
+for (CalculationMatrixRow matrixRecord : [
+    SELECT Id, Name, InputData, OutputData, CalculationMatrixVersionId
+    FROM CalculationMatrixRow
+    WHERE CalculationMatrixVersionId = :versionId
+]) {
+    System.debug('CACHE SIZE: ' + rateMatrixRowDataCache.size());
+System.debug('CACHE CONTAINS ROW: ' + rateMatrixRowDataCache.containsKey(matrixRecord.Id));
+    RateMatrixRowData cachedRow;
+
+    if (rateMatrixRowDataCache.containsKey(matrixRecord.Id)) {
+        cachedRow = rateMatrixRowDataCache.get(matrixRecord.Id);
+    } else {
+        Map<String, Object> rowData =
+            (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.OutputData);
+
+        Map<String, Object> rowInputData =
+            (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.InputData);
+
+        if (rowData != null && rowInputData != null) {
+            cachedRow = new RateMatrixRowData(rowInputData, rowData);
+            rateMatrixRowDataCache.put(matrixRecord.Id, cachedRow);
+        }
+    }
+
+    if (cachedRow != null) {
+        Map<String, Object> rowData = cachedRow.outputData;
+        Map<String, Object> rowInputData = cachedRow.inputData;
+
+        // Existing filtering logic - unchanged
+        List<String> concatinatedValues =
+            concatinatedDetailsMap.containsKey(uniqueName)
+            ? concatinatedDetailsMap.get(uniqueName)[0].split('#')
+            : null;
+
+        if (concatinatedValues != null &&
+            concatinatedValues[0] == String.valueOf(rowInputData.get('CoverageName')) &&
+            concatinatedValues[1] == String.valueOf(rowInputData.get('RateClass')) &&
+            concatinatedValues[2] == String.valueOf(rowInputData.get('ExpireType')) &&
+            Integer.valueOf(concatinatedValues[3]) >= Integer.valueOf(rowInputData.get('MinMiles')) &&
+            Integer.valueOf(concatinatedValues[3]) <= Integer.valueOf(rowData.get('MaxMiles')) &&
+            Integer.valueOf(concatinatedValues[4]) >= Integer.valueOf(rowInputData.get('MinAge')) &&
+            Integer.valueOf(concatinatedValues[4]) <= Integer.valueOf(rowData.get('MaxAge'))) {
+
+            Map<String, String> rowDataFieldsMap = new Map<String, String>();
+
+            rowDataFieldsMap.put('MaxAge RateCost', String.valueOf(rowData.get('MaxAge')));
+            rowDataFieldsMap.put('MaxMiles RateCost', String.valueOf(rowData.get('MaxMiles')));
+            rowDataFieldsMap.put('BaseReserve RateCost', String.valueOf(rowData.get('BaseReserve')));
+            rowDataFieldsMap.put('RateCode RateCost', String.valueOf(rowData.get('RateCode')));
+            rowDataFieldsMap.put('Commission RateCost', String.valueOf(rowData.get('Commission')));
+            rowDataFieldsMap.put('PremiumTax RateCost', String.valueOf(rowData.get('PremiumTax')));
+            rowDataFieldsMap.put('ExpiryType RateCost', String.valueOf(rowInputData.get('ExpireType')));
+            rowDataFieldsMap.put('TermMonths RateCost', String.valueOf(rowInputData.get('TermMonths')));
+            rowDataFieldsMap.put('TermMiles RateCost', String.valueOf(rowInputData.get('TermMiles')));
+            rowDataFieldsMap.put('Deductible RateCost', String.valueOf(rowInputData.get('Deductible')));
+            rowDataFieldsMap.put('RateClass RateCost', String.valueOf(rowInputData.get('RateClass')));
+            System.debug('ROW DATA FIELDS MAP LIST SIZE: ' + rowDataFieldsMapList.size());
+            rowDataFieldsMapList.add(rowDataFieldsMap);
+        }
+    }
+}
+
 
                     //populating response map
                     if(dealerCodeDetailsMap.containsKey(uniqueName)) {
@@ -797,6 +900,7 @@ String responseBody = ContractUtility.fetchLookupTableRows(
                 }
             }
         }
+    
     }
     
     /**
@@ -862,9 +966,16 @@ String responseBody = ContractUtility.fetchLookupTableRows(
                     Decimal surchargeCost = 0;
                     String uniqueName = versionIdtoMatrixName.containsKey(versionId) ? versionIdtoMatrixName.get(versionId) : '';
                     //fetching related matrix rows records
-                    for(CalculationMatrixRow matrixRecord : [SELECT Id, Name, InputData, OutputData, CalculationMatrixVersionId FROM CalculationMatrixRow where CalculationMatrixVersionId = : versionId]) {
-                        Map<String, Object> rowData = (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.OutputData);
-                        Map<String, Object> rowInputData = (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.InputData);
+           for(CalculationMatrixRow matrixRecord : [
+    SELECT Id, Name, InputData, OutputData, CalculationMatrixVersionId
+    FROM CalculationMatrixRow
+    WHERE CalculationMatrixVersionId = :versionId
+]) {
+    Map<String, Object> rowData =
+        (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.OutputData);
+
+    Map<String, Object> rowInputData =
+        (Map<String, Object>) JSON.deserializeUntyped(matrixRecord.InputData);
                         //filtering records
                         if(rowData != null && rowInputData != null) {
                             List<String> concatinatedValues = concatinatedDetailsMap.containsKey(uniqueName) ? concatinatedDetailsMap.get(uniqueName)[0].split('#') : null;

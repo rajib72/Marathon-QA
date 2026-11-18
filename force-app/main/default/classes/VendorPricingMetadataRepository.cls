@@ -42,6 +42,70 @@ public with sharing class VendorPricingMetadataRepository {
         public List<Vendor_Value_Mapping__mdt> values = new List<Vendor_Value_Mapping__mdt>();
     }
 
+    public class CalloutConfiguration {
+        public Vendor_Endpoint__mdt endpoint;
+        public Vendor_Integration__mdt vendor;
+    }
+
+    public class AuthenticationConfiguration {
+        public List<Vendor_Endpoint__mdt> endpoints = new List<Vendor_Endpoint__mdt>();
+        public List<Vendor_Field_Mapping__mdt> fields = new List<Vendor_Field_Mapping__mdt>();
+    }
+
+    public static CalloutConfiguration loadForCallout(Id endpointId) {
+        CalloutConfiguration result = new CalloutConfiguration();
+        if (endpointId == null) {
+            return result;
+        }
+        List<Vendor_Endpoint__mdt> endpoints = [
+            SELECT Id, DeveloperName, Vendor__c, Active__c, Operation__c, Invocation_Policy__c,
+                   Execution_Mode__c, HTTP_Method__c, Relative_Path__c, Request_Content_Type__c,
+                   Accept_Header__c, Timeout_Milliseconds__c, Requires_Authentication__c,
+                   Prerequisite_Endpoint_Code__c,
+                   Vendor__r.Id, Vendor__r.DeveloperName, Vendor__r.Active__c,
+                   Vendor__r.Include_in_All_Vendor_Search__c, Vendor__r.Named_Credential_API_Name__c,
+                   Vendor__r.Default_Timeout_Milliseconds__c, Vendor__r.Authentication_Strategy__c,
+                   Vendor__r.Token_Expiry_Buffer_Seconds__c
+            FROM Vendor_Endpoint__mdt
+            WHERE Id = :endpointId
+        ];
+        if (!endpoints.isEmpty()) {
+            result.endpoint = endpoints[0];
+            result.vendor = result.endpoint.Vendor__r;
+        }
+        return result;
+    }
+
+    public static AuthenticationConfiguration loadForAuthentication(Id vendorId) {
+        AuthenticationConfiguration result = new AuthenticationConfiguration();
+        if (vendorId == null) {
+            return result;
+        }
+        result.endpoints = [
+            SELECT Id, DeveloperName, Vendor__c, Active__c, Operation__c, Invocation_Policy__c,
+                   Execution_Mode__c, HTTP_Method__c, Relative_Path__c, Request_Content_Type__c,
+                   Accept_Header__c, Timeout_Milliseconds__c, Requires_Authentication__c,
+                   Prerequisite_Endpoint_Code__c
+            FROM Vendor_Endpoint__mdt
+            WHERE Vendor__c = :vendorId AND Active__c = true
+              AND Invocation_Policy__c = 'PREREQUISITE' AND Operation__c IN ('TOKEN', 'TOKEN_REFRESH')
+        ];
+        Set<Id> endpointIds = new Set<Id>();
+        for (Vendor_Endpoint__mdt endpoint : result.endpoints) {
+            endpointIds.add(endpoint.Id);
+        }
+        if (!endpointIds.isEmpty()) {
+            result.fields = [
+                SELECT Vendor_Endpoint__c, Internal_Field_Code__c, Direction__c,
+                       Vendor_Field_Path__c, Source_Reference__c
+                FROM Vendor_Field_Mapping__mdt
+                WHERE Vendor_Endpoint__c IN :endpointIds AND Active__c = true
+                  AND Direction__c IN ('OUTBOUND', 'INBOUND')
+            ];
+        }
+        return result;
+    }
+
     public static RequestConfiguration loadRequestConfiguration(String endpointName, Boolean includeDrafts) {
         RequestConfiguration result = new RequestConfiguration();
         List<Vendor_Endpoint__mdt> endpoints = [
