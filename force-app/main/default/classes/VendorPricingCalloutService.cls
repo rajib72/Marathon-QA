@@ -69,9 +69,12 @@ public with sharing class VendorPricingCalloutService {
             ));
             return result;
         }
+        Boolean resolveToken = accessToken == null &&
+            VendorPricingAuthenticationService.appliesTo(configuration);
         for (VendorPricingRequestBuilder.PreparedRequest request : prepared.requests) {
-            VendorPricingHttpTransport.Response response =
-                VendorPricingHttpTransport.send(configuration, request.jsonBody, accessToken);
+            VendorPricingHttpTransport.Response response = resolveToken
+                ? VendorPricingAuthenticationService.send(configuration, request.jsonBody)
+                : VendorPricingHttpTransport.send(configuration, request.jsonBody, accessToken);
             result.batches.add(new BatchResult(request, response));
         }
         return result;

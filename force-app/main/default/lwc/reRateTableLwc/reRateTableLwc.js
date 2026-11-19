@@ -2,12 +2,14 @@ import { LightningElement, track } from 'lwc';
 import { OmniscriptBaseMixin } from 'omnistudio/omniscriptBaseMixin';
 import getInitialContractData from '@salesforce/apex/ReRateLWCController.getInitialContractData';
 import getEligibleMatrixRows from '@salesforce/apex/ReRateLWCController.getEligibleMatrixRows';
+import getOptionsForCoverage from '@salesforce/apex/ReRateLWCController.getOptionsForCoverage';
 
 export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement) {
     @track coverageOptions = [];
     @track monthOptions = [];
     @track mileOptions = [];
     @track deductibleOptions = [];
+    @track optionItems = [];
 
     @track selectedCoverageId = '';
     @track selectedCoverageName = '';
@@ -16,6 +18,8 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
     @track selectedMonths = '';
     @track selectedMiles = '';
     @track selectedDeductible = '';
+    @track selectedOptions = [];
+    @track activeOptionSet = '';
     @track noMatchingRowsWarning = false;
 
     contractContext = {};
@@ -24,6 +28,10 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
 
     get isAutoProduct() {
         return this.contractContext.productType !== 'Home';
+    }
+
+    get hasOptionItems() {
+        return this.optionItems && this.optionItems.length > 0;
     }
 
     connectedCallback() {
@@ -38,16 +46,35 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             const data = await getInitialContractData({ contractId: contractId });
             this.contractContext = data;
             this.coverageOptions = data.coverageOptions || [];
+            this.activeOptionSet = data.optionSet || '';
+
+            const initialOpts = data.initialAvailableOptions || [];
+            this.optionItems = initialOpts.map(opt => ({
+                label: opt.label,
+                value: opt.value,
+                checked: false
+            }));
 
             /* --- AUTO-POPULATION FROM EXISTING CONTRACT ON LOAD (COMMENTED OUT) ---
             this.saleMileage = data.saleMileage || 0;
             this.selectedCoverageId = data.currentCoverageId || '';
             this.selectedCoverageName = data.currentCoverageName || '';
+            if (data.currentOptions) {
+                const savedOpts = data.currentOptions.split(';').map(s => s.trim()).filter(Boolean);
+                const validValues = this.optionItems.map(o => o.value);
+                this.selectedOptions = savedOpts.filter(val => validValues.includes(val));
+                this.optionItems = this.optionItems.map(item => ({
+                    ...item,
+                    checked: this.selectedOptions.includes(item.value)
+                }));
+            }
 
             if (this.selectedCoverageId) {
                 await this.loadMatrixRows(true);
             }
             ------------------------------------------------------------------------- */
+
+            this.syncToOmniScript();
         } catch (error) {
             console.error('Error loading initial contract data:', error);
         }
@@ -71,6 +98,37 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             this.syncToOmniScript();
         } catch (error) {
             console.error('Error loading matrix rows:', error);
+        }
+    }
+
+    async refreshOptionsForCoverage() {
+        if (!this.selectedCoverageId) return;
+
+        try {
+            const optResult = await getOptionsForCoverage({
+                clientName: this.contractContext.clientName,
+                productName: this.contractContext.productName,
+                defaultOptionSet: this.contractContext.optionSet,
+                coverageId: this.selectedCoverageId,
+                saleDate: this.contractContext.saleDate
+            });
+
+            this.activeOptionSet = optResult.activeOptionSet || '';
+            const fetchedOptions = optResult.availableOptions || [];
+            const validValues = fetchedOptions.map(o => o.value);
+
+            // Restrict selection strictly to options valid in the updated Option Set
+            this.selectedOptions = this.selectedOptions.filter(val => validValues.includes(val));
+
+            this.optionItems = fetchedOptions.map(opt => ({
+                label: opt.label,
+                value: opt.value,
+                checked: this.selectedOptions.includes(opt.value)
+            }));
+
+            this.syncToOmniScript();
+        } catch (error) {
+            console.error('Error refreshing options for coverage:', error);
         }
     }
 
@@ -156,7 +214,11 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
         this.selectedMonths = '';
         this.selectedMiles = '';
         this.selectedDeductible = '';
-        await this.loadMatrixRows(false);
+
+        await Promise.all([
+            this.loadMatrixRows(false),
+            this.refreshOptionsForCoverage()
+        ]);
     }
 
     handleMileageChange(event) {
@@ -191,10 +253,32 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
         this.syncToOmniScript();
     }
 
+    handleOptionChange(event) {
+        const optionVal = event.target.name;
+        const isChecked = event.target.checked;
+
+        if (isChecked) {
+            if (!this.selectedOptions.includes(optionVal)) {
+                this.selectedOptions = [...this.selectedOptions, optionVal];
+            }
+        } else {
+            this.selectedOptions = this.selectedOptions.filter(val => val !== optionVal);
+        }
+
+        this.optionItems = this.optionItems.map(item => ({
+            ...item,
+            checked: this.selectedOptions.includes(item.value)
+        }));
+
+        this.syncToOmniScript();
+    }
+
     syncToOmniScript() {
         const existingStepData = (this.omniJsonData && this.omniJsonData.ReRateFieldsForNotSecureOneProducts)
             ? this.omniJsonData.ReRateFieldsForNotSecureOneProducts
             : {};
+
+        const option1Formatted = this.selectedOptions.length > 0 ? this.selectedOptions.join(';') : null;
 
         const updatedStepNode = {
             ...existingStepData,
@@ -203,7 +287,10 @@ export default class ReRateTableLwc extends OmniscriptBaseMixin(LightningElement
             Sale_Mileage_NonSecureOne: this.isAutoProduct && this.saleMileage !== '' && this.saleMileage !== null ? Number(this.saleMileage) : null,
             Term_Months_NonSecureOne: this.selectedMonths !== '' ? Number(this.selectedMonths) : null,
             Term_Miles_NonSecureOne: this.isAutoProduct && this.selectedMiles !== '' ? Number(this.selectedMiles) : null,
-            Deductible__c: this.selectedDeductible !== '' ? Number(this.selectedDeductible) : null
+            Deductible__c: this.selectedDeductible !== '' ? Number(this.selectedDeductible) : null,
+            Option_1_NonSecureOne: option1Formatted,
+            Options_Sets_NonSecureOne: this.activeOptionSet || null,
+            IsCommercial: this.selectedOptions.includes('Commercial Use')
         };
 
         this.omniApplyCallResp({

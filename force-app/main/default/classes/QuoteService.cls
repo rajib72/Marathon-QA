@@ -124,11 +124,15 @@ private static QuoteService.ResponseGenerator generateAllQuoteRequest(
                 ? 0
                 : upToResponse.quotes.size()));
 
-        if (upToResponse == null || upToResponse.status != 200) {
-            throw new QuoteConfigurationException(
-                'Error generating UpTo quotes.'
-            );
-        }
+       if (upToResponse == null ||
+    upToResponse.status != 200 ||
+    upToResponse.quotes == null ||
+    upToResponse.quotes.isEmpty()) {
+
+    throw new QuoteConfigurationException(
+        'Error generating UpTo quotes or no UpTo quotes found.'
+    );
+}
 
         // Generate AddOn quotes next
         QuoteService.ResponseGenerator addOnResponse =
@@ -142,11 +146,15 @@ private static QuoteService.ResponseGenerator generateAllQuoteRequest(
                 ? 0
                 : addOnResponse.quotes.size()));
 
-        if (addOnResponse == null || addOnResponse.status != 200) {
-            throw new QuoteConfigurationException(
-                'Error generating AddOn quotes.'
-            );
-        }
+        if (addOnResponse == null ||
+    addOnResponse.status != 200 ||
+    addOnResponse.quotes == null ||
+    addOnResponse.quotes.isEmpty()) {
+
+    throw new QuoteConfigurationException(
+        'Error generating AddOn quotes or no AddOn quotes found.'
+    );
+}
 
         // Combine both responses
         QuoteService.ResponseGenerator combinedResponse =
@@ -778,6 +786,13 @@ String responseBody = ContractUtility.fetchLookupTableRows(
             Integer makeYear = Integer.valueOf(vehicleMap.get('MakeYear'));
             String expireType = UpToorAddOn;
             String yearDiff = String.valueOf(System.today().year() - makeYear) + '.0';
+            System.debug('===== RATE LOOKUP INPUT =====');
+System.debug('UPTO OR ADDON: ' + UpToorAddOn);
+System.debug('COVERAGE NAME: ' + coverageName);
+System.debug('RATE CLASS: ' + rateClass);
+System.debug('MIN MILES: ' + minMilesDecimal);
+System.debug('YEAR DIFFERENCE: ' + yearDiff);
+System.debug('MATRIX NAME: ' + matrixName);
             
             //creates a key that will be used to fetch the particular record from rate set DM
             String concatinatedStr = coverageName + '#' + rateClass + '#' + expireType + '#' + minMilesDecimal + '#' + yearDiff;
@@ -861,32 +876,77 @@ System.debug('CACHE CONTAINS ROW: ' + rateMatrixRowDataCache.containsKey(matrixR
             concatinatedDetailsMap.containsKey(uniqueName)
             ? concatinatedDetailsMap.get(uniqueName)[0].split('#')
             : null;
+            System.debug('===== RATE MATRIX ROW CHECK =====');
+System.debug('MATRIX UNIQUE NAME: ' + uniqueName);
+System.debug('CONCATENATED VALUES: ' + concatinatedValues);
+System.debug('ROW INPUT DATA: ' + rowInputData);
+System.debug('ROW OUTPUT DATA: ' + rowData);
 
-        if (concatinatedValues != null &&
-            concatinatedValues[0] == String.valueOf(rowInputData.get('CoverageName')) &&
-            concatinatedValues[1] == String.valueOf(rowInputData.get('RateClass')) &&
-            concatinatedValues[2] == String.valueOf(rowInputData.get('ExpireType')) &&
-            Integer.valueOf(concatinatedValues[3]) >= Integer.valueOf(rowInputData.get('MinMiles')) &&
-            Integer.valueOf(concatinatedValues[3]) <= Integer.valueOf(rowData.get('MaxMiles')) &&
-            Integer.valueOf(concatinatedValues[4]) >= Integer.valueOf(rowInputData.get('MinAge')) &&
-            Integer.valueOf(concatinatedValues[4]) <= Integer.valueOf(rowData.get('MaxAge'))) {
+       
+if (concatinatedValues != null) {
 
-            Map<String, String> rowDataFieldsMap = new Map<String, String>();
+    Boolean coverageMatches =
+        concatinatedValues[0] == String.valueOf(rowInputData.get('CoverageName'));
 
-            rowDataFieldsMap.put('MaxAge RateCost', String.valueOf(rowData.get('MaxAge')));
-            rowDataFieldsMap.put('MaxMiles RateCost', String.valueOf(rowData.get('MaxMiles')));
-            rowDataFieldsMap.put('BaseReserve RateCost', String.valueOf(rowData.get('BaseReserve')));
-            rowDataFieldsMap.put('RateCode RateCost', String.valueOf(rowData.get('RateCode')));
-            rowDataFieldsMap.put('Commission RateCost', String.valueOf(rowData.get('Commission')));
-            rowDataFieldsMap.put('PremiumTax RateCost', String.valueOf(rowData.get('PremiumTax')));
-            rowDataFieldsMap.put('ExpiryType RateCost', String.valueOf(rowInputData.get('ExpireType')));
-            rowDataFieldsMap.put('TermMonths RateCost', String.valueOf(rowInputData.get('TermMonths')));
-            rowDataFieldsMap.put('TermMiles RateCost', String.valueOf(rowInputData.get('TermMiles')));
-            rowDataFieldsMap.put('Deductible RateCost', String.valueOf(rowInputData.get('Deductible')));
-            rowDataFieldsMap.put('RateClass RateCost', String.valueOf(rowInputData.get('RateClass')));
-            System.debug('ROW DATA FIELDS MAP LIST SIZE: ' + rowDataFieldsMapList.size());
-            rowDataFieldsMapList.add(rowDataFieldsMap);
-        }
+    Boolean rateClassMatches =
+        concatinatedValues[1] == String.valueOf(rowInputData.get('RateClass'));
+
+    Boolean expireTypeMatches =
+        concatinatedValues[2] == String.valueOf(rowInputData.get('ExpireType'));
+
+    Boolean minMilesMatches =
+        Integer.valueOf(concatinatedValues[3]) >=
+        Integer.valueOf(rowInputData.get('MinMiles'));
+
+    Boolean maxMilesMatches =
+        Integer.valueOf(concatinatedValues[3]) <=
+        Integer.valueOf(rowData.get('MaxMiles'));
+
+    Boolean minAgeMatches =
+        Integer.valueOf(concatinatedValues[4]) >=
+        Integer.valueOf(rowInputData.get('MinAge'));
+
+    Boolean maxAgeMatches =
+        Integer.valueOf(concatinatedValues[4]) <=
+        Integer.valueOf(rowData.get('MaxAge'));
+
+    if (String.valueOf(rowInputData.get('CoverageName')) == 'Elite Plus Used') {
+        System.debug('COVERAGE MATCH: ' + coverageMatches);
+        System.debug('RATE CLASS MATCH: ' + rateClassMatches);
+        System.debug('EXPIRE TYPE MATCH: ' + expireTypeMatches);
+        System.debug('MIN MILES MATCH: ' + minMilesMatches);
+        System.debug('MAX MILES MATCH: ' + maxMilesMatches);
+        System.debug('MIN AGE MATCH: ' + minAgeMatches);
+        System.debug('MAX AGE MATCH: ' + maxAgeMatches);
+    }
+
+    if (coverageMatches && rateClassMatches && expireTypeMatches &&
+        minMilesMatches && maxMilesMatches && minAgeMatches && maxAgeMatches) {
+
+        System.debug('***** RATE MATRIX ROW MATCHED *****');
+
+        Map<String, String> rowDataFieldsMap = new Map<String, String>();
+
+        rowDataFieldsMap.put('MaxAge RateCost', String.valueOf(rowData.get('MaxAge')));
+        rowDataFieldsMap.put('MaxMiles RateCost', String.valueOf(rowData.get('MaxMiles')));
+        rowDataFieldsMap.put('BaseReserve RateCost', String.valueOf(rowData.get('BaseReserve')));
+        rowDataFieldsMap.put('RateCode RateCost', String.valueOf(rowData.get('RateCode')));
+        rowDataFieldsMap.put('Commission RateCost', String.valueOf(rowData.get('Commission')));
+        rowDataFieldsMap.put('PremiumTax RateCost', String.valueOf(rowData.get('PremiumTax')));
+        rowDataFieldsMap.put('ExpiryType RateCost', String.valueOf(rowInputData.get('ExpireType')));
+        rowDataFieldsMap.put('TermMonths RateCost', String.valueOf(rowInputData.get('TermMonths')));
+        rowDataFieldsMap.put('TermMiles RateCost', String.valueOf(rowInputData.get('TermMiles')));
+        rowDataFieldsMap.put('Deductible RateCost', String.valueOf(rowInputData.get('Deductible')));
+        rowDataFieldsMap.put('RateClass RateCost', String.valueOf(rowInputData.get('RateClass')));
+
+        System.debug('ROW DATA FIELDS MAP LIST SIZE: ' + rowDataFieldsMapList.size());
+
+        rowDataFieldsMapList.add(rowDataFieldsMap);
+
+        System.debug('ROW DATA FIELDS MAP LIST SIZE: ' + rowDataFieldsMapList.size());
+    }
+}
+
     }
 }
 

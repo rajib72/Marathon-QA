@@ -1,5 +1,17 @@
 public with sharing class ReRateLWCController {
 
+    private static final Set<String> OPTION_SET_KEYS = new Set<String>{
+        'optionset', 'optionssets', 'optionsets', 'optionsetname', 'optionsetc', 'optionssetsc', 'optionssetsinput', 'optionsetinput'
+    };
+
+    private static final Set<String> OPTION_NAME_KEYS = new Set<String>{
+        'optionname', 'option', 'options', 'optionnameinput', 'option1', 'optionvalue'
+    };
+
+    private static final Set<String> COVERAGE_KEYS = new Set<String>{
+        'coveragename', 'coveragelevel', 'coverage', 'coveragenameinput'
+    };
+
     public class OptionItem implements Comparable {
         @AuraEnabled public String label { get; set; }
         @AuraEnabled public String value { get; set; }
@@ -25,10 +37,16 @@ public with sharing class ReRateLWCController {
         @AuraEnabled public Decimal maxMiles { get; set; }
     }
 
+    public class OptionSetResultWrapper {
+        @AuraEnabled public String activeOptionSet { get; set; }
+        @AuraEnabled public List<OptionItem> availableOptions { get; set; }
+    }
+
     public class ContractDataWrapper {
         @AuraEnabled public String clientName { get; set; }
         @AuraEnabled public String productName { get; set; }
         @AuraEnabled public String rateSet { get; set; }
+        @AuraEnabled public String optionSet { get; set; }
         @AuraEnabled public String rateClass { get; set; }
         @AuraEnabled public String productType { get; set; }
         @AuraEnabled public Decimal saleMileage { get; set; }
@@ -39,13 +57,16 @@ public with sharing class ReRateLWCController {
         @AuraEnabled public String currentTermMonths { get; set; }
         @AuraEnabled public String currentTermMiles { get; set; }
         @AuraEnabled public String currentDeductible { get; set; }
+        @AuraEnabled public String currentOptions { get; set; }
         @AuraEnabled public List<OptionItem> coverageOptions { get; set; }
+        @AuraEnabled public List<OptionItem> initialAvailableOptions { get; set; }
     }
 
     @AuraEnabled
     public static ContractDataWrapper getInitialContractData(Id contractId) {
         ContractDataWrapper response = new ContractDataWrapper();
         response.coverageOptions = new List<OptionItem>();
+        response.initialAvailableOptions = new List<OptionItem>();
 
         List<InsurancePolicy> policies = [
             SELECT Id,
@@ -54,6 +75,8 @@ public with sharing class ReRateLWCController {
                    Product__c,
                    Coverage_Level__c,
                    Rate_Set__c,
+                   Options_Sets__c,
+                   Option_1__c,
                    Sale_Date__c,
                    SaleDate,
                    Vehicle_Year__c,
@@ -110,7 +133,9 @@ public with sharing class ReRateLWCController {
         response.clientName = clientName;
         response.productName = policy.Product__c != null ? policy.Product__c : '';
         response.rateSet = policy.Rate_Set__c != null ? policy.Rate_Set__c : '';
+        response.optionSet = policy.Options_Sets__c != null ? policy.Options_Sets__c : '';
         response.rateClass = policy.Class__c != null ? policy.Class__c : '';
+
         Boolean isHome = (policy.RecordType != null && policy.RecordType.Name == 'Home Warranty')
             || String.isNotBlank(policy.Residential_Type__c)
             || (policy.Product__c != null && policy.Product__c.containsIgnoreCase('Home'));
@@ -125,10 +150,249 @@ public with sharing class ReRateLWCController {
         response.currentTermMonths = policy.Contract_Term_Months__c != null ? String.valueOf(Integer.valueOf(policy.Contract_Term_Months__c)) : '';
         response.currentTermMiles = policy.Contract_Term_Mileage__c != null ? String.valueOf(Integer.valueOf(policy.Contract_Term_Mileage__c)) : '';
         response.currentDeductible = policy.Deductible__c != null ? String.valueOf(Integer.valueOf(policy.Deductible__c)) : '';
+        response.currentOptions = policy.Option_1__c != null ? policy.Option_1__c : '';
         ------------------------------------------------------------------------ */
 
         response.coverageOptions = fetchEligibleCoverageLevels(clientName, response.productName, coverageName);
+
+        OptionSetResultWrapper initialOptResult = evaluateOptionSetOptions(
+            clientName,
+            response.productName,
+            response.optionSet,
+            coverageName,
+            false,
+            effectiveSaleDate
+        );
+        response.optionSet = initialOptResult.activeOptionSet;
+        response.initialAvailableOptions = initialOptResult.availableOptions;
+
         return response;
+    }
+
+    @AuraEnabled
+    public static OptionSetResultWrapper getOptionsForCoverage(
+        String clientName,
+        String productName,
+        String defaultOptionSet,
+        String coverageId,
+        Datetime saleDate
+    ) {
+        String coverageName = '';
+        if (String.isNotBlank(coverageId)) {
+            List<Coverage_Level__c> covLevels = [SELECT Id, Name FROM Coverage_Level__c WHERE Id = :coverageId LIMIT 1];
+            if (!covLevels.isEmpty()) {
+                coverageName = covLevels[0].Name;
+            }
+        }
+
+        Datetime effectiveCheck = saleDate != null ? saleDate : Datetime.now();
+        return evaluateOptionSetOptions(
+            clientName,
+            productName,
+            defaultOptionSet,
+            coverageName,
+            true,
+            effectiveCheck
+        );
+    }
+
+    private static OptionSetResultWrapper evaluateOptionSetOptions(
+        String clientName,
+        String productName,
+        String defaultOptionSet,
+        String coverageName,
+        Boolean strictCoverageFilter,
+        Datetime effectiveCheck
+    ) {
+        OptionSetResultWrapper result = new OptionSetResultWrapper();
+        result.activeOptionSet = defaultOptionSet != null ? defaultOptionSet.trim() : '';
+        result.availableOptions = new List<OptionItem>();
+
+        if (String.isNotBlank(clientName) && String.isNotBlank(productName) && String.isNotBlank(coverageName)) {
+            String dealerMappedOptionSet = resolveOptionSetFromDealerLookup(clientName, productName, coverageName);
+            if (String.isNotBlank(dealerMappedOptionSet)) {
+                result.activeOptionSet = dealerMappedOptionSet;
+            }
+        }
+
+        if (String.isBlank(result.activeOptionSet)
+            || result.activeOptionSet.equalsIgnoreCase('N/A')
+            || result.activeOptionSet.equalsIgnoreCase('None')) {
+            return result;
+        }
+
+        Id versionId = resolveActiveMatrixVersionId(result.activeOptionSet, coverageName, effectiveCheck);
+        if (versionId == null) {
+            return result;
+        }
+
+        Set<String> coverageMatchedOptions = new Set<String>();
+        Set<String> allMatrixOptions = new Set<String>();
+        String targetOptionSet = decodeEntities(result.activeOptionSet).trim().toLowerCase();
+        String targetCoverage = String.isNotBlank(coverageName) ? decodeEntities(coverageName).trim().toLowerCase() : '';
+
+        for (CalculationMatrixRow row : [
+            SELECT Id, InputData, OutputData
+            FROM CalculationMatrixRow
+            WHERE CalculationMatrixVersionId = :versionId
+        ]) {
+            if (String.isBlank(row.InputData)) continue;
+
+            Map<String, Object> inputData = (Map<String, Object>) JSON.deserializeUntyped(row.InputData);
+            Map<String, Object> outputData = String.isNotBlank(row.OutputData)
+                ? (Map<String, Object>) JSON.deserializeUntyped(row.OutputData)
+                : new Map<String, Object>();
+
+            String rowOptionSet = extractByNormalizedKey(inputData, OPTION_SET_KEYS);
+            if (String.isNotBlank(rowOptionSet) && !rowOptionSet.equalsIgnoreCase(targetOptionSet)) {
+                continue;
+            }
+
+            String optionName = extractByNormalizedKey(inputData, OPTION_NAME_KEYS);
+            if (String.isBlank(optionName)) {
+                optionName = extractByNormalizedKey(outputData, OPTION_NAME_KEYS);
+            }
+            if (String.isBlank(optionName)
+                || optionName.equalsIgnoreCase('N/A')
+                || optionName.equalsIgnoreCase('None')) {
+                continue;
+            }
+
+            allMatrixOptions.add(optionName);
+
+            String rowCoverage = extractByNormalizedKey(inputData, COVERAGE_KEYS);
+            if (String.isBlank(rowCoverage)
+                || rowCoverage.equalsIgnoreCase('All')
+                || rowCoverage.equalsIgnoreCase('Include All')
+                || (String.isNotBlank(targetCoverage) && rowCoverage.equalsIgnoreCase(targetCoverage))) {
+                coverageMatchedOptions.add(optionName);
+            }
+        }
+
+        Set<String> finalOptionNames = coverageMatchedOptions;
+        if (!strictCoverageFilter && finalOptionNames.isEmpty()) {
+            finalOptionNames = allMatrixOptions;
+        }
+
+        for (String opt : finalOptionNames) {
+            result.availableOptions.add(new OptionItem(opt, opt));
+        }
+        result.availableOptions.sort();
+
+        return result;
+    }
+
+    private static String resolveOptionSetFromDealerLookup(String clientName, String productName, String coverageName) {
+        List<CalculationMatrixVersion> dealerVersions = [
+            SELECT Id
+            FROM CalculationMatrixVersion
+            WHERE (CalculationMatrix.UniqueName = 'Dealer_Code_Lookup' OR CalculationMatrix.Name = 'Dealer_Code_Lookup')
+            AND IsEnabled = true
+            ORDER BY Rank ASC NULLS LAST, StartDateTime DESC, VersionNumber DESC
+            LIMIT 1
+        ];
+
+        if (dealerVersions.isEmpty()) {
+            return '';
+        }
+
+        String targetClient = decodeEntities(clientName).trim().toLowerCase();
+        String targetProduct = decodeEntities(productName).trim().toLowerCase();
+        String targetCoverage = decodeEntities(coverageName).trim().toLowerCase();
+
+        for (CalculationMatrixRow row : [
+            SELECT Id, OutputData
+            FROM CalculationMatrixRow
+            WHERE CalculationMatrixVersionId = :dealerVersions[0].Id
+        ]) {
+            if (String.isBlank(row.OutputData)) continue;
+
+            Map<String, Object> outMap = (Map<String, Object>) JSON.deserializeUntyped(row.OutputData);
+            String rowClient = outMap.get('Client') != null ? decodeEntities(String.valueOf(outMap.get('Client'))).trim().toLowerCase() : '';
+            String rowProduct = outMap.get('Product') != null ? decodeEntities(String.valueOf(outMap.get('Product'))).trim().toLowerCase() : '';
+            String rowCov = outMap.get('CoverageLevel') != null ? decodeEntities(String.valueOf(outMap.get('CoverageLevel'))).trim().toLowerCase() : '';
+
+            if (rowClient == targetClient && rowProduct == targetProduct && rowCov == targetCoverage) {
+                String foundOptionSet = extractRawByNormalizedKey(outMap, OPTION_SET_KEYS);
+                if (String.isNotBlank(foundOptionSet)) {
+                    return foundOptionSet;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private static Id resolveActiveMatrixVersionId(String tableName, String coverageName, Datetime effectiveCheck) {
+        List<String> candidateNames = new List<String>();
+
+        String exactMdtName = getMatrixNameFromMetadata(tableName, coverageName);
+        if (String.isNotBlank(exactMdtName)) {
+            candidateNames.add(exactMdtName.trim());
+        }
+
+        String tableOnlyMdtName = getMatrixNameFromMetadata(tableName, null);
+        if (String.isNotBlank(tableOnlyMdtName) && !candidateNames.contains(tableOnlyMdtName.trim())) {
+            candidateNames.add(tableOnlyMdtName.trim());
+        }
+
+        if (String.isNotBlank(coverageName)) {
+            String generatedWithCov = generateMatrixName(tableName, coverageName);
+            if (String.isNotBlank(generatedWithCov) && !candidateNames.contains(generatedWithCov)) {
+                candidateNames.add(generatedWithCov);
+            }
+        }
+
+        String rawTableName = tableName.trim();
+        if (!candidateNames.contains(rawTableName)) {
+            candidateNames.add(rawTableName);
+        }
+
+        String sanitizedTableOnly = sanitizeMatrixName(rawTableName);
+        if (String.isNotBlank(sanitizedTableOnly) && !candidateNames.contains(sanitizedTableOnly)) {
+            candidateNames.add(sanitizedTableOnly);
+        }
+
+        if (!candidateNames.contains('Options_Sets')) {
+            candidateNames.add('Options_Sets');
+        }
+
+        List<CalculationMatrixVersion> versions = [
+            SELECT Id,
+                   CalculationMatrix.Name,
+                   CalculationMatrix.UniqueName,
+                   StartDateTime,
+                   EndDateTime
+            FROM CalculationMatrixVersion
+            WHERE (CalculationMatrix.Name IN :candidateNames OR CalculationMatrix.UniqueName IN :candidateNames)
+            AND IsEnabled = true
+            ORDER BY Rank ASC NULLS LAST, StartDateTime DESC, VersionNumber DESC
+        ];
+
+        if (versions.isEmpty()) {
+            return null;
+        }
+
+        for (String candidate : candidateNames) {
+            for (CalculationMatrixVersion v : versions) {
+                Boolean nameMatches = (v.CalculationMatrix.Name != null && v.CalculationMatrix.Name.equalsIgnoreCase(candidate))
+                    || (v.CalculationMatrix.UniqueName != null && v.CalculationMatrix.UniqueName.equalsIgnoreCase(candidate));
+                Boolean dateMatches = v.StartDateTime <= effectiveCheck
+                    && (v.EndDateTime == null || v.EndDateTime >= effectiveCheck);
+                if (nameMatches && dateMatches) {
+                    return v.Id;
+                }
+            }
+            for (CalculationMatrixVersion v : versions) {
+                Boolean nameMatches = (v.CalculationMatrix.Name != null && v.CalculationMatrix.Name.equalsIgnoreCase(candidate))
+                    || (v.CalculationMatrix.UniqueName != null && v.CalculationMatrix.UniqueName.equalsIgnoreCase(candidate));
+                if (nameMatches) {
+                    return v.Id;
+                }
+            }
+        }
+
+        return versions[0].Id;
     }
 
     private static List<OptionItem> fetchEligibleCoverageLevels(String clientName, String productName, String fallbackCoverageName) {
@@ -209,36 +473,9 @@ public with sharing class ReRateLWCController {
         }
         String coverageName = covLevels[0].Name;
 
-        String matrixName = getMatrixNameFromMetadata(rateSet, coverageName);
-        if (String.isBlank(matrixName)) {
-            matrixName = generateMatrixName(rateSet, coverageName);
-        }
-
         Datetime effectiveCheck = saleDate != null ? saleDate : Datetime.now();
-
-        List<CalculationMatrixVersion> activeVersions = [
-            SELECT Id
-            FROM CalculationMatrixVersion
-            WHERE (CalculationMatrix.Name = :matrixName OR CalculationMatrix.UniqueName = :matrixName)
-            AND IsEnabled = true
-            AND StartDateTime <= :effectiveCheck
-            AND (EndDateTime = null OR EndDateTime >= :effectiveCheck)
-            ORDER BY Rank ASC NULLS LAST, StartDateTime DESC, VersionNumber DESC
-            LIMIT 1
-        ];
-
-        if (activeVersions.isEmpty()) {
-            activeVersions = [
-                SELECT Id
-                FROM CalculationMatrixVersion
-                WHERE (CalculationMatrix.Name = :matrixName OR CalculationMatrix.UniqueName = :matrixName)
-                AND IsEnabled = true
-                ORDER BY Rank ASC NULLS LAST, StartDateTime DESC, VersionNumber DESC
-                LIMIT 1
-            ];
-        }
-
-        if (activeVersions.isEmpty()) {
+        Id activeVersionId = resolveActiveMatrixVersionId(rateSet, coverageName, effectiveCheck);
+        if (activeVersionId == null) {
             return matchingRows;
         }
 
@@ -249,7 +486,7 @@ public with sharing class ReRateLWCController {
         for (CalculationMatrixRow row : [
             SELECT Id, InputData, OutputData
             FROM CalculationMatrixRow
-            WHERE CalculationMatrixVersionId = :activeVersions[0].Id
+            WHERE CalculationMatrixVersionId = :activeVersionId
         ]) {
             if (String.isBlank(row.InputData) || String.isBlank(row.OutputData)) continue;
 
@@ -257,7 +494,7 @@ public with sharing class ReRateLWCController {
             Map<String, Object> outputData = (Map<String, Object>) JSON.deserializeUntyped(row.OutputData);
 
             String rowCoverage = inputData.get('CoverageName') != null ? String.valueOf(inputData.get('CoverageName')).trim() : '';
-            if (rowCoverage != coverageName) continue;
+            if (String.isNotBlank(rowCoverage) && rowCoverage != coverageName) continue;
 
             Decimal minMiles = parseDecimal(inputData.get('MinMiles'), 0);
             Decimal maxMiles = parseDecimal(outputData.get('MaxMiles'), 9999999);
@@ -284,6 +521,29 @@ public with sharing class ReRateLWCController {
         }
 
         return matchingRows;
+    }
+
+    private static String extractByNormalizedKey(Map<String, Object> dataMap, Set<String> targetNormalizedKeys) {
+        String raw = extractRawByNormalizedKey(dataMap, targetNormalizedKeys);
+        if (String.isBlank(raw) || raw.equalsIgnoreCase('null')) {
+            return '';
+        }
+        return raw;
+    }
+
+    private static String extractRawByNormalizedKey(Map<String, Object> dataMap, Set<String> targetNormalizedKeys) {
+        if (dataMap == null) return '';
+        for (String key : dataMap.keySet()) {
+            if (key == null) continue;
+            String normalized = key.replaceAll('[^a-zA-Z0-9]', '').toLowerCase();
+            if (targetNormalizedKeys.contains(normalized) && dataMap.get(key) != null) {
+                String val = decodeEntities(String.valueOf(dataMap.get(key))).trim();
+                if (String.isNotBlank(val)) {
+                    return val;
+                }
+            }
+        }
+        return '';
     }
 
     private static Decimal parseDecimal(Object val, Decimal defaultVal) {
@@ -315,12 +575,18 @@ public with sharing class ReRateLWCController {
     }
 
     private static String getMatrixNameFromMetadata(String rateSet, String coverageName) {
+        if (String.isBlank(rateSet)) return null;
+        String cleanTable = rateSet.trim();
+        String cleanCov = String.isNotBlank(coverageName) ? coverageName.trim() : '';
+
         for (DecisionMatrixMapping__mdt mdt : DecisionMatrixMapping__mdt.getAll().values()) {
-            if (mdt.Table_Name__c == rateSet) {
-                if (String.isBlank(coverageName) && mdt.Coverage_Level__c == null) {
+            if (mdt.Table_Name__c != null && mdt.Table_Name__c.trim().equalsIgnoreCase(cleanTable)) {
+                if (String.isBlank(cleanCov) && String.isBlank(mdt.Coverage_Level__c)) {
                     return mdt.Decision_Matrix_Name__c;
                 }
-                if (String.isNotBlank(coverageName) && mdt.Coverage_Level__c == coverageName) {
+                if (String.isNotBlank(cleanCov)
+                    && String.isNotBlank(mdt.Coverage_Level__c)
+                    && mdt.Coverage_Level__c.trim().equalsIgnoreCase(cleanCov)) {
                     return mdt.Decision_Matrix_Name__c;
                 }
             }
@@ -328,10 +594,15 @@ public with sharing class ReRateLWCController {
         return null;
     }
 
+    private static String sanitizeMatrixName(String rawName) {
+        if (String.isBlank(rawName)) return '';
+        String cleaned = rawName.replaceAll(' - ', '_').replaceAll('-', '_').replaceAll(' ', '_').replaceAll('\\(', '').replaceAll('\\)', '').replaceAll('\\.', '_');
+        return cleaned.replaceAll('_+', '_');
+    }
+
     private static String generateMatrixName(String rateSet, String coverageName) {
         String combined = rateSet + '_' + coverageName;
-        combined = combined.replaceAll(' - ', '_').replaceAll('-', '_').replaceAll(' ', '_').replaceAll('\\(', '').replaceAll('\\)', '').replaceAll('\\.', '_');
-        combined = combined.replaceAll('_+', '_');
+        combined = sanitizeMatrixName(combined);
         if (combined.equalsIgnoreCase('Health_CAR_23_31_79_Health_CAR')) return 'Health_CAR_Health_CAR';
         if (combined.equalsIgnoreCase('Health_CAR_23_31_79_Health_CAR_Validation')) return 'Health_CAR_Health_CAR_Validation';
         if (rateSet == 'MBI - Amtrust (CA)') combined = combined.replaceAll('MBI_Amtrust', 'MBI_AmTrust');

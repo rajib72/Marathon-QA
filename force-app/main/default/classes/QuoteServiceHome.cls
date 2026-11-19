@@ -87,15 +87,8 @@ if(!Test.isRunningTest()) {
             
             List<HWQuote> quotes = new List<HWQuote>();
             Set<String> uniqueKeys = new Set<String>();
-
-            //added by Joyita Sarkar 17.11.26
-            // Keep DealerProgramId order consistent in the API response.
-            List<String> orderedDealerIds =
-                new List<String>(responseMap.keySet());
-
-            orderedDealerIds.sort();
             
-            for(String key : orderedDealerIds){
+            for(String key : responseMap.keySet()){
                 if(responseMapList.containsKey(key)){
                     for(Map<String,String> rateRow : responseMapList.get(key)){
                         
@@ -124,7 +117,20 @@ q.CoverageLevel = responseMap.get(key).get('CoverageLevel');
 
 String coverage = q.CoverageLevel;
 
-if(String.isBlank(coverage)){
+// Determine the only coverage level permitted for the requested state.
+String expectedCoverage = getExpectedCoverageLevel(req.OriginalState);
+
+if (String.isBlank(coverage) ||
+    !coverage.trim().equalsIgnoreCase(expectedCoverage)) {
+
+    System.debug(
+        'Skipping quote due to state-based coverage validation. ' +
+        'Client = ' + req.Client +
+        ', OriginalState = ' + req.OriginalState +
+        ', Actual Coverage = ' + coverage +
+        ', Expected Coverage = ' + expectedCoverage
+    );
+
     continue;
 }
 
@@ -465,50 +471,25 @@ public static List<HWQuote> getQuotesForInternalRequest(
         RestContext.response = previousResponse;
     }
 }
+private static String getExpectedCoverageLevel(String originalState) {
 
-private static List<CalculationMatrixRow> getActiveMatrixRows(
-    String matrixUniqueName
-) {
-    if (String.isBlank(matrixUniqueName)) {
+    if (String.isBlank(originalState)) {
         throw new HWValidationException(
-            'Decision Matrix name is blank.'
+            'OriginalState is required.'
         );
     }
 
-    List<CalculationMatrix> matrices = [
-        SELECT Id, UniqueName,
-            (
-                SELECT Id
-                FROM CalculationMatrixVersions
-                WHERE IsEnabled = TRUE
-                AND EndDateTime = NULL
-                ORDER BY CreatedDate DESC
-                LIMIT 1
-            )
-        FROM CalculationMatrix
-        WHERE UniqueName = :matrixUniqueName
-        LIMIT 1
-    ];
+    String state = originalState.trim().toUpperCase();
 
-    if (
-        matrices.isEmpty() ||
-        matrices[0].CalculationMatrixVersions.isEmpty()
-    ) {
-        throw new HWValidationException(
-            'Decision Matrix is missing or has no active version: ' +
-            matrixUniqueName
-        );
+    if (state == 'FL') {
+        return 'Superior FL';
     }
-
-    Id versionId =
-        matrices[0].CalculationMatrixVersions[0].Id;
-
-    return [
-        SELECT Id, Name, InputData, OutputData,
-               CalculationMatrixVersionId
-        FROM CalculationMatrixRow
-        WHERE CalculationMatrixVersionId = :versionId
-    ];
+    else if (state == 'CA') {
+        return 'Superior IO';
+    }
+    else {
+        return 'Superior FTP';
+    }
 }
     
 public static void setup(
@@ -566,128 +547,9 @@ private static Quote_Client_Config__mdt getClientConfig(String clientName) {
     return null;
 }
 
-public static void dealerCodeLookup(
-    String client,
-    String dealerLookupMatrixName,
-    String stateMatrixName
-){
-    // Retrieve Dealer Lookup rows directly using SOQL.
-    List<CalculationMatrixRow> dealerRows =
-        getActiveMatrixRows(dealerLookupMatrixName);
-
-    for(CalculationMatrixRow matrixRow : dealerRows){
-
-        Map<String, Object> inputData =
-            (Map<String, Object>) JSON.deserializeUntyped(
-                matrixRow.InputData
-            );
-
-        Map<String, Object> outputData =
-            (Map<String, Object>) JSON.deserializeUntyped(
-                matrixRow.OutputData
-            );
-
-        if(inputData == null || outputData == null){
-            continue;
-        }
-
-        String matrixClient =
-            outputData.get('Client') == null
-            ? ''
-            : String.valueOf(outputData.get('Client')).trim();
-
-        if(matrixClient.equalsIgnoreCase(
-            client == null ? '' : client.trim()
-        )){
-
-            // DealerProgramId comes from InputData.
-            String dealerId =
-                inputData.get('DealerProgramId') == null
-                ? ''
-                : String.valueOf(
-                    inputData.get('DealerProgramId')
-                );
-
-            if(String.isBlank(dealerId)){
-                continue;
-            }
-
-            String coverageLvl =
-                outputData.get('CoverageLevel') == null
-                ? ''
-                : String.valueOf(
-                    outputData.get('CoverageLevel')
-                );
-
-            String rateSet =
-                outputData.get('RateSet') == null
-                ? ''
-                : String.valueOf(
-                    outputData.get('RateSet')
-                );
-
-            String optionSet =
-                outputData.get('OptionSets') == null
-                ? ''
-                : String.valueOf(
-                    outputData.get('OptionSets')
-                );
-
-            Map<String,String> colMap =
-                new Map<String,String>();
-
-            colMap.put(
-                'Product',
-                outputData.get('Product') == null
-                ? ''
-                : String.valueOf(outputData.get('Product'))
-            );
-
-            colMap.put('CoverageLevel', coverageLvl);
-            colMap.put('RateSet', rateSet);
-            colMap.put('OptionSets', optionSet);
-
-            System.debug(
-                '===== STATE MATRIX CONFIG CHECK ====='
-            );
-            System.debug('Client = ' + client);
-            System.debug(
-                'Configured State Matrix = ' + stateMatrixName
-            );
-            System.debug(
-                'Dealer Matrix StateSet = ' +
-                outputData.get('StateSet')
-            );
-            System.debug(
-                '===================================='
-            );
-
-            // Use configured State Matrix name.
-            String stateSetUniqueName = stateMatrixName;
-
-            colMap.put('StateSet', stateSetUniqueName);
-
-            stateSetMatrixSet.add(stateSetUniqueName);
-
-            responseMap.put(dealerId, colMap);
-
-            System.debug(
-                '================ DEALER LOOKUP ================'
-            );
-            System.debug('DealerProgramId = ' + dealerId);
-            System.debug('Product = ' + colMap.get('Product'));
-            System.debug('Coverage = ' + coverageLvl);
-            System.debug('RateSet = ' + rateSet);
-            System.debug('OptionSet = ' + optionSet);
-            System.debug('StateSet = ' + stateSetUniqueName);
-            System.debug(
-                '==============================================='
-            );
-        }
-    }
-} 
+ 
     
-/*    
+    
     // DEALER LOOKUP
 public static void dealerCodeLookup(
     String client,
@@ -850,7 +712,7 @@ if (matrixClient.equalsIgnoreCase(
             );
         }
     }
-}*/
+}
     
     // OPTIONS LOOKUP
     public static void optionsCostLookupHW() {
@@ -1131,7 +993,7 @@ System.debug('===== RATE MATRIX TERM CHECK END =====');
             }
         }
     }
- /*   
+    
    public static void callCoverageLevelDM(
     String coverageMatrixName
 ){
@@ -1184,86 +1046,7 @@ System.debug(
                 }
             }
         }
-    }*/
-
-    public static void callCoverageLevelDM(
-    String coverageMatrixName
-){
-    if(String.isBlank(coverageMatrixName)){
-        throw new HWValidationException(
-            'Coverage Matrix is not configured for client.'
-        );
     }
-
-    // Retrieve Coverage Matrix rows directly using SOQL.
-    List<CalculationMatrixRow> coverageRows =
-        getActiveMatrixRows(coverageMatrixName);
-
-    System.debug(
-        '===== COVERAGE MATRIX ROW COUNT ====='
-    );
-    System.debug('Rows = ' + coverageRows.size());
-    System.debug(
-        '====================================='
-    );
-
-    for(String key : responseMap.keySet()){
-
-        String coverage =
-            responseMap.get(key).get('CoverageLevel');
-
-        for(CalculationMatrixRow matrixRow : coverageRows){
-
-            Map<String, Object> inputData =
-                (Map<String, Object>) JSON.deserializeUntyped(
-                    matrixRow.InputData
-                );
-
-            Map<String, Object> outputData =
-                (Map<String, Object>) JSON.deserializeUntyped(
-                    matrixRow.OutputData
-                );
-
-            if(inputData == null || outputData == null){
-                continue;
-            }
-
-            String matrixCoverage =
-                inputData.get('CoverageLevel') == null
-                ? ''
-                : String.valueOf(
-                    inputData.get('CoverageLevel')
-                );
-
-            if(matrixCoverage == coverage){
-
-                String validationDays =
-                    outputData.get('ValidationDays') == null
-                    ? ''
-                    : String.valueOf(
-                        outputData.get('ValidationDays')
-                    );
-
-                responseMap.get(key).put(
-                    'ValidationDays',
-                    validationDays
-                );
-
-                System.debug(
-                    '============= COVERAGE DM ============='
-                );
-                System.debug('DealerProgramId = ' + key);
-                System.debug('Coverage = ' + coverage);
-                System.debug(
-                    'ValidationDays = ' + validationDays
-                );
-                System.debug(
-                    '======================================'
-                );
-            }
-        }
-    }
-}
     
     public static void allocationCostLookup(String client){
         
@@ -1747,7 +1530,7 @@ gen.writeEndObject();
         return gen.getAsString();
     }
     
- /*   public static void stateSetLookup(
+    public static void stateSetLookup(
     HWRequest req,
     Decimal defaultValidationDays
 ){
@@ -1769,15 +1552,20 @@ gen.writeEndObject();
         ];
         System.debug('StateSet Matrix = ' + QuoteServiceHome.stateSetMatrixSet);
         
-        if(stateSetMatrixRec.isEmpty()){
-            return;
-        }
+      if (stateSetMatrixRec.isEmpty()) {
+    throw new HWValidationException(
+        'State Set matrix is not configured or was not found.'
+    );
+}
         
         for(CalculationMatrix matrix : stateSetMatrixRec){
             
-            if(matrix.CalculationMatrixVersions.isEmpty()){
-                continue;
-            }
+           if (matrix.CalculationMatrixVersions.isEmpty()) {
+    throw new HWValidationException(
+        'State Set matrix has no active version: ' +
+        matrix.UniqueName
+    );
+}
             
             String versionId = matrix.CalculationMatrixVersions[0].Id;
             
@@ -1813,7 +1601,12 @@ System.debug(rows);
                 Object activeVal =
                     rowData.get('Active');
                 
-                if(stateFromMatrix == req.OriginalState){
+               if (
+    stateFromMatrix != null &&
+    stateFromMatrix.trim().equalsIgnoreCase(
+        req.OriginalState.trim()
+    )
+) {
                     
                     if(activeVal != null &&
                        (Boolean.valueOf(activeVal) ||
@@ -1863,121 +1656,6 @@ for(String key : dealerIds){
     }
 }
     }
- */   
-
-
- public static void stateSetLookup(
-    HWRequest req,
-    Decimal defaultValidationDays
-){
-
-    if(stateSetMatrixSet.isEmpty()){
-        throw new HWValidationException(
-            'State Set not found for given request'
-        );
-    }
-
-    System.debug(
-        'StateSet Matrix = ' + stateSetMatrixSet
-    );
-
-    // Process each configured State Matrix using direct SOQL.
-    for(String matrixName : stateSetMatrixSet){
-
-        List<CalculationMatrixRow> stateRows =
-            getActiveMatrixRows(matrixName);
-
-        Boolean isActive = false;
-
-        for(CalculationMatrixRow matrixRow : stateRows){
-
-            Map<String, Object> inputData =
-                (Map<String, Object>) JSON.deserializeUntyped(
-                    matrixRow.InputData
-                );
-
-            Map<String, Object> outputData =
-                (Map<String, Object>) JSON.deserializeUntyped(
-                    matrixRow.OutputData
-                );
-
-            if(inputData == null || outputData == null){
-                continue;
-            }
-
-            String stateFromMatrix =
-                inputData.get('State') == null
-                ? ''
-                : String.valueOf(inputData.get('State'));
-
-            Object activeVal = inputData.get('Active');
-
-            Boolean activeState =
-                activeVal != null &&
-                String.valueOf(activeVal).equalsIgnoreCase('true');
-
-            if(stateFromMatrix == req.OriginalState){
-
-                if(activeState){
-
-                    isActive = true;
-
-                    // Carrier comes from OutputData.
-                    if(outputData.containsKey('Carrier')){
-
-                        hwMap.put(
-                            'InsuranceCarrier',
-                            String.valueOf(
-                                outputData.get('Carrier')
-                            )
-                        );
-                    }
-
-                    System.debug(
-                        'StateSet Row = ' +
-                        JSON.serializePretty(inputData)
-                    );
-
-                    System.debug(
-                        'Carrier from State Set = ' +
-                        outputData.get('Carrier')
-                    );
-
-                    System.debug(
-                        'Saved in hwMap = ' +
-                        hwMap.get('InsuranceCarrier')
-                    );
-
-                    break;
-                }
-            }
-        }
-
-        if(!isActive){
-            throw new HWValidationException(
-                'Quote Request Failed: State '
-                + req.OriginalState
-                + ' is inactive or restricted.'
-            );
-        }
-    }
-
-    // Preserve existing default ValidationDays logic.
-    List<String> dealerIds =
-        new List<String>(responseMap.keySet());
-
-    dealerIds.sort();
-
-    for(String key : dealerIds){
-
-        if(!responseMap.get(key).containsKey('ValidationDays')){
-
-            responseMap.get(key).put(
-                'ValidationDays',
-                String.valueOf(defaultValidationDays)
-            );
-        }
-    }
-}
+    
     
 }

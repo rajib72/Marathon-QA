@@ -63,5 +63,34 @@
             placeholder="Select Deductible"
             class="slds-m-top_small">
         </lightning-combobox>
+
+        <!-- 6. Option1 (Filtered by active Option Set & refreshed on Coverage Level change) -->
+        <div class="slds-form-element slds-m-top_small">
+            <label class="slds-form-element__label">
+                <strong>Option1</strong>
+            </label>
+            <div class="slds-form-element__control">
+                <template if:true={hasOptionItems}>
+                    <div class="slds-grid slds-wrap">
+                        <template for:each={optionItems} for:item="opt">
+                            <div key={opt.value} class="slds-m-right_medium slds-m-bottom_x-small">
+                                <lightning-input
+                                    type="checkbox"
+                                    label={opt.label}
+                                    name={opt.value}
+                                    checked={opt.checked}
+                                    onchange={handleOptionChange}>
+                                </lightning-input>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <template if:false={hasOptionItems}>
+                    <div class="slds-text-color_weak slds-text-body_small">
+                        No options available for the active Option Set.
+                    </div>
+                </template>
+            </div>
+        </div>
     </div>
 </template>
